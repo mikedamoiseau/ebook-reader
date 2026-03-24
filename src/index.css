@@ -1,3 +1,48 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --color-accent: #3b82f6;
+  --color-accent-hover: #2563eb;
+  --reading-max-width: 680px;
+  --reading-line-height: 1.7;
+}
+
+/* Reader content typography for injected EPUB HTML */
+.reader-content p { margin-bottom: 1em; }
+.reader-content h1 { font-size: 1.5em; font-weight: 700; margin: 1.5em 0 0.75em; }
+.reader-content h2 { font-size: 1.25em; font-weight: 600; margin: 1.25em 0 0.6em; }
+.reader-content h3 { font-size: 1.1em; font-weight: 600; margin: 1em 0 0.5em; }
+.reader-content a { color: #1d4ed8; text-decoration: underline; }
+.dark .reader-content a { color: #93c5fd; }
+.reader-content blockquote {
+  border-left: 3px solid #d1d5db;
+  padding-left: 1em;
+  margin: 1.5em 0;
+  color: #4b5563;
+  font-style: italic;
+}
+.dark .reader-content blockquote {
+  border-left-color: #4b5563;
+  color: #9ca3af;
+}
+.reader-content img { max-width: 100%; height: auto; border-radius: 4px; }
+.reader-content pre,
+.reader-content code {
+  font-family: "JetBrains Mono", "Courier New", monospace;
+  background: #f3f4f6;
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+.dark .reader-content pre,
+.dark .reader-content code { background: #1f2937; }
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
