@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import BookCard from "../components/BookCard";
 import EmptyState from "../components/EmptyState";
@@ -104,46 +105,42 @@ export default function Library() {
     }
   }, [loadLibrary]);
 
-  // Drag and drop handlers
-  const handleDragOver = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      if (!dragging) setDragging(true);
-    },
-    [dragging]
-  );
+  // Drag and drop via Tauri v2 webview events (DOM File objects don't expose paths)
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragging(false);
-  }, []);
-
-  const handleDrop = useCallback(
-    async (e: React.DragEvent) => {
-      e.preventDefault();
-      setDragging(false);
-
-      const files = Array.from(e.dataTransfer.files);
-      const epubFile = files.find((f) => f.name.endsWith(".epub"));
-      if (!epubFile) return;
-
-      setImporting(true);
-      setError(null);
-      try {
-        // In Tauri, dropped files provide a path
-        const filePath = (epubFile as unknown as { path?: string }).path;
-        if (filePath) {
-          await invoke("import_book", { filePath });
-          await loadLibrary();
+    getCurrentWebview()
+      .onDragDropEvent(async (event) => {
+        const { type } = event.payload;
+        if (type === "enter") {
+          setDragging(true);
+        } else if (type === "leave") {
+          setDragging(false);
+        } else if (type === "drop") {
+          setDragging(false);
+          const paths = event.payload.paths;
+          const epubPath = paths.find((p) => p.toLowerCase().endsWith(".epub"));
+          if (!epubPath) return;
+          setImporting(true);
+          setError(null);
+          try {
+            await invoke("import_book", { filePath: epubPath });
+            await loadLibrary();
+          } catch (err) {
+            setError(String(err));
+          } finally {
+            setImporting(false);
+          }
         }
-      } catch (err) {
-        setError(String(err));
-      } finally {
-        setImporting(false);
-      }
-    },
-    [loadLibrary]
-  );
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [loadLibrary]);
 
   // Filter books by search
   const filtered = books.filter((book) => {
@@ -171,9 +168,6 @@ export default function Library() {
   return (
     <div
       className="flex flex-col h-full relative"
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
     >
       {/* Toolbar */}
       {hasBooks && (
