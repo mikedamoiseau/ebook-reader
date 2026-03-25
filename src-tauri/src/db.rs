@@ -16,7 +16,8 @@ fn run_schema(conn: &Connection) -> Result<()> {
             file_path TEXT NOT NULL UNIQUE,
             cover_path TEXT,
             total_chapters INTEGER NOT NULL DEFAULT 0,
-            added_at INTEGER NOT NULL
+            added_at INTEGER NOT NULL,
+            format TEXT NOT NULL DEFAULT 'epub'
         );
 
         -- Ensures existing databases get the unique constraint even if the
@@ -40,7 +41,40 @@ fn run_schema(conn: &Connection) -> Result<()> {
             created_at INTEGER NOT NULL,
             FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
         );
-    ")
+
+        CREATE TABLE IF NOT EXISTS collections (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL CHECK(type IN ('manual','automated')),
+            icon TEXT,
+            color TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS collection_rules (
+            id TEXT PRIMARY KEY,
+            collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+            field TEXT NOT NULL CHECK(field IN ('author','format','date_added','reading_progress')),
+            operator TEXT NOT NULL,
+            value TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS book_collections (
+            book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+            added_at INTEGER NOT NULL,
+            PRIMARY KEY (book_id, collection_id)
+        );
+    ")?;
+
+    // Additive migration: add format column to existing databases.
+    // ALTER TABLE ADD COLUMN fails silently if the column already exists.
+    let _ = conn.execute_batch(
+        "ALTER TABLE books ADD COLUMN format TEXT NOT NULL DEFAULT 'epub';",
+    );
+
+    Ok(())
 }
 
 pub fn create_pool(db_path: &Path) -> Result<DbPool, Box<dyn std::error::Error>> {
@@ -76,8 +110,8 @@ pub fn init_db(db_path: &Path) -> Result<Connection> {
 
 pub fn insert_book(conn: &Connection, book: &Book) -> Result<()> {
     conn.execute(
-        "INSERT INTO books (id, title, author, file_path, cover_path, total_chapters, added_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO books (id, title, author, file_path, cover_path, total_chapters, added_at, format)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             book.id,
             book.title,
@@ -86,6 +120,7 @@ pub fn insert_book(conn: &Connection, book: &Book) -> Result<()> {
             book.cover_path,
             book.total_chapters,
             book.added_at,
+            book.format.to_string(),
         ],
     )?;
     Ok(())
@@ -93,11 +128,12 @@ pub fn insert_book(conn: &Connection, book: &Book) -> Result<()> {
 
 pub fn get_book(conn: &Connection, id: &str) -> Result<Option<Book>> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, author, file_path, cover_path, total_chapters, added_at
+        "SELECT id, title, author, file_path, cover_path, total_chapters, added_at, format
          FROM books WHERE id = ?1",
     )?;
     let mut rows = stmt.query(params![id])?;
     if let Some(row) = rows.next()? {
+        let format_str: String = row.get(7)?;
         Ok(Some(Book {
             id: row.get(0)?,
             title: row.get(1)?,
@@ -106,6 +142,7 @@ pub fn get_book(conn: &Connection, id: &str) -> Result<Option<Book>> {
             cover_path: row.get(4)?,
             total_chapters: row.get(5)?,
             added_at: row.get(6)?,
+            format: format_str.parse().map_err(|e: String| rusqlite::Error::InvalidParameterName(e))?,
         }))
     } else {
         Ok(None)
@@ -114,11 +151,12 @@ pub fn get_book(conn: &Connection, id: &str) -> Result<Option<Book>> {
 
 pub fn get_book_by_file_path(conn: &Connection, file_path: &str) -> Result<Option<Book>> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, author, file_path, cover_path, total_chapters, added_at
+        "SELECT id, title, author, file_path, cover_path, total_chapters, added_at, format
          FROM books WHERE file_path = ?1",
     )?;
     let mut rows = stmt.query(params![file_path])?;
     if let Some(row) = rows.next()? {
+        let format_str: String = row.get(7)?;
         Ok(Some(Book {
             id: row.get(0)?,
             title: row.get(1)?,
@@ -127,6 +165,7 @@ pub fn get_book_by_file_path(conn: &Connection, file_path: &str) -> Result<Optio
             cover_path: row.get(4)?,
             total_chapters: row.get(5)?,
             added_at: row.get(6)?,
+            format: format_str.parse().map_err(|e: String| rusqlite::Error::InvalidParameterName(e))?,
         }))
     } else {
         Ok(None)
@@ -135,10 +174,11 @@ pub fn get_book_by_file_path(conn: &Connection, file_path: &str) -> Result<Optio
 
 pub fn list_books(conn: &Connection) -> Result<Vec<Book>> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, author, file_path, cover_path, total_chapters, added_at
+        "SELECT id, title, author, file_path, cover_path, total_chapters, added_at, format
          FROM books ORDER BY added_at DESC",
     )?;
     let rows = stmt.query_map([], |row| {
+        let format_str: String = row.get(7)?;
         Ok(Book {
             id: row.get(0)?,
             title: row.get(1)?,
@@ -147,6 +187,7 @@ pub fn list_books(conn: &Connection) -> Result<Vec<Book>> {
             cover_path: row.get(4)?,
             total_chapters: row.get(5)?,
             added_at: row.get(6)?,
+            format: format_str.parse().map_err(|e: String| rusqlite::Error::InvalidParameterName(e))?,
         })
     })?;
     rows.collect()
@@ -155,7 +196,7 @@ pub fn list_books(conn: &Connection) -> Result<Vec<Book>> {
 pub fn update_book(conn: &Connection, book: &Book) -> Result<()> {
     conn.execute(
         "UPDATE books SET title=?2, author=?3, file_path=?4, cover_path=?5,
-         total_chapters=?6, added_at=?7 WHERE id=?1",
+         total_chapters=?6, added_at=?7, format=?8 WHERE id=?1",
         params![
             book.id,
             book.title,
@@ -164,6 +205,7 @@ pub fn update_book(conn: &Connection, book: &Book) -> Result<()> {
             book.cover_path,
             book.total_chapters,
             book.added_at,
+            book.format.to_string(),
         ],
     )?;
     Ok(())
@@ -256,6 +298,7 @@ pub fn delete_bookmark(conn: &Connection, id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::BookFormat;
     use tempfile::tempdir;
 
     fn setup() -> (tempfile::TempDir, Connection) {
@@ -274,6 +317,7 @@ mod tests {
             cover_path: None,
             total_chapters: 10,
             added_at: 1700000000,
+            format: BookFormat::Epub,
         }
     }
 
