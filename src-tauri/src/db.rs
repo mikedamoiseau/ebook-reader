@@ -10,6 +10,8 @@ pub fn init_db(db_path: &Path) -> Result<Connection> {
 
     let conn = Connection::open(db_path)?;
 
+    conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+
     conn.execute_batch("
         CREATE TABLE IF NOT EXISTS books (
             id TEXT PRIMARY KEY,
@@ -347,5 +349,39 @@ mod tests {
         delete_bookmark(&conn, "bm-1").unwrap();
         let bookmarks2 = list_bookmarks(&conn, "book-3").unwrap();
         assert_eq!(bookmarks2.len(), 0);
+    }
+
+    #[test]
+    fn test_delete_book_cascades_to_related_rows() {
+        let (_dir, conn) = setup();
+        let book = sample_book("book-cascade");
+        insert_book(&conn, &book).unwrap();
+
+        let bookmark = Bookmark {
+            id: "bm-cascade".to_string(),
+            book_id: "book-cascade".to_string(),
+            chapter_index: 1,
+            scroll_position: 0.1,
+            note: None,
+            created_at: 1700000300,
+        };
+        insert_bookmark(&conn, &bookmark).unwrap();
+
+        let progress = ReadingProgress {
+            book_id: "book-cascade".to_string(),
+            chapter_index: 1,
+            scroll_position: 0.1,
+            last_read_at: 1700000300,
+        };
+        upsert_reading_progress(&conn, &progress).unwrap();
+
+        // Deleting the book must cascade to both child tables.
+        delete_book(&conn, "book-cascade").unwrap();
+
+        let bookmarks = list_bookmarks(&conn, "book-cascade").unwrap();
+        assert!(bookmarks.is_empty(), "bookmarks should be deleted via cascade");
+
+        let rp = get_reading_progress(&conn, "book-cascade").unwrap();
+        assert!(rp.is_none(), "reading_progress should be deleted via cascade");
     }
 }
