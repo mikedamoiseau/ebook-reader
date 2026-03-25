@@ -5,7 +5,7 @@ use crate::cbr;
 use crate::cbz;
 use crate::db::{self, DbPool};
 use crate::epub;
-use crate::models::{Book, BookFormat, Bookmark, ReadingProgress};
+use crate::models::{Book, BookFormat, Bookmark, Collection, CollectionRule, CollectionType, NewRuleInput, ReadingProgress};
 use crate::pdf;
 
 pub struct AppState {
@@ -20,10 +20,27 @@ pub async fn import_book(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Book, String> {
-    // Return the existing book if this file has already been imported.
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+
+    // Step 1: Compute SHA-256 hash of source file.
+    let hash = {
+        let mut hasher = Sha256::new();
+        let mut file = std::fs::File::open(&file_path)
+            .map_err(|e| format!("Cannot open file: {e}"))?;
+        let mut buf = [0u8; 65536];
+        loop {
+            let n = file.read(&mut buf).map_err(|e| e.to_string())?;
+            if n == 0 { break; }
+            hasher.update(&buf[..n]);
+        }
+        format!("{:x}", hasher.finalize())
+    };
+
+    // Step 2: Hash-based duplicate check — return existing book if already imported.
     {
         let conn = state.db.get().map_err(|e| e.to_string())?;
-        if let Some(existing) = db::get_book_by_file_path(&conn, &file_path).map_err(|e| e.to_string())? {
+        if let Some(existing) = db::get_book_by_file_hash(&conn, &hash).map_err(|e| e.to_string())? {
             return Ok(existing);
         }
     }
@@ -45,16 +62,35 @@ pub async fn import_book(
 
     let book_id = Uuid::new_v4().to_string();
 
+    // Step 3: Resolve library folder, creating it if necessary.
+    let library_folder = {
+        let conn = state.db.get().map_err(|e| e.to_string())?;
+        match db::get_setting(&conn, "library_folder").map_err(|e| e.to_string())? {
+            Some(f) => f,
+            None => default_library_folder()?,
+        }
+    };
+    std::fs::create_dir_all(&library_folder).map_err(|e| e.to_string())?;
+
+    // Step 4: Copy source file into library folder as {book_id}.{ext}.
+    // On failure, no DB entry is created and the source file is untouched.
+    let library_path = format!("{}/{}.{}", library_folder, book_id, extension);
+    std::fs::copy(&file_path, &library_path)
+        .map_err(|e| format!("Failed to copy file to library: {e}"))?;
+
+    // Steps 5 & 6: Parse using library-internal path; store hash in Book.
     let book = match format {
         BookFormat::Epub => {
-            let metadata = epub::parse_epub_metadata(&file_path).map_err(|e| e.to_string())?;
+            let metadata = epub::parse_epub_metadata(&library_path).map_err(|e| {
+                let _ = std::fs::remove_file(&library_path);
+                e.to_string()
+            })?;
 
-            // Track the cover directory so it can be cleaned up if the DB insert fails.
             let mut cover_dir: Option<std::path::PathBuf> = None;
             let cover_path = if let Ok(data_dir) = app.path().app_data_dir() {
                 let dir = data_dir.join("covers").join(&book_id);
                 let dest = dir.to_string_lossy().to_string();
-                match epub::extract_cover(&file_path, &dest) {
+                match epub::extract_cover(&library_path, &dest) {
                     Ok(Some(path)) => {
                         cover_dir = Some(dir);
                         Some(path)
@@ -65,13 +101,16 @@ pub async fn import_book(
                 None
             };
 
-            let chapters = epub::get_chapter_list(&file_path).map_err(|e| e.to_string())?;
+            let chapters = epub::get_chapter_list(&library_path).map_err(|e| {
+                let _ = std::fs::remove_file(&library_path);
+                e.to_string()
+            })?;
 
             let book = Book {
                 id: book_id,
                 title: metadata.title,
                 author: metadata.author,
-                file_path,
+                file_path: library_path.clone(),
                 cover_path,
                 total_chapters: chapters.len() as u32,
                 added_at: std::time::SystemTime::now()
@@ -79,10 +118,12 @@ pub async fn import_book(
                     .unwrap_or_default()
                     .as_secs() as i64,
                 format,
+                file_hash: Some(hash),
             };
 
             let conn = state.db.get().map_err(|e| e.to_string())?;
             if let Err(e) = db::insert_book(&conn, &book) {
+                let _ = std::fs::remove_file(&library_path);
                 if let Some(dir) = cover_dir {
                     let _ = std::fs::remove_dir_all(dir);
                 }
@@ -92,12 +133,15 @@ pub async fn import_book(
             return Ok(book);
         }
         BookFormat::Cbz => {
-            let meta = cbz::import_cbz(&file_path)?;
+            let meta = cbz::import_cbz(&library_path).map_err(|e| {
+                let _ = std::fs::remove_file(&library_path);
+                e
+            })?;
             Book {
                 id: book_id,
                 title: meta.title,
                 author: String::new(),
-                file_path,
+                file_path: library_path.clone(),
                 cover_path: None,
                 total_chapters: meta.page_count,
                 added_at: std::time::SystemTime::now()
@@ -105,15 +149,19 @@ pub async fn import_book(
                     .unwrap_or_default()
                     .as_secs() as i64,
                 format,
+                file_hash: Some(hash),
             }
         }
         BookFormat::Cbr => {
-            let meta = cbr::import_cbr(&file_path)?;
+            let meta = cbr::import_cbr(&library_path).map_err(|e| {
+                let _ = std::fs::remove_file(&library_path);
+                e
+            })?;
             Book {
                 id: book_id,
                 title: meta.title,
                 author: String::new(),
-                file_path,
+                file_path: library_path.clone(),
                 cover_path: None,
                 total_chapters: meta.page_count,
                 added_at: std::time::SystemTime::now()
@@ -121,15 +169,19 @@ pub async fn import_book(
                     .unwrap_or_default()
                     .as_secs() as i64,
                 format,
+                file_hash: Some(hash),
             }
         }
         BookFormat::Pdf => {
-            let meta = pdf::import_pdf(&file_path)?;
+            let meta = pdf::import_pdf(&library_path).map_err(|e| {
+                let _ = std::fs::remove_file(&library_path);
+                e
+            })?;
             Book {
                 id: book_id,
                 title: meta.title,
                 author: meta.author,
-                file_path,
+                file_path: library_path.clone(),
                 cover_path: None,
                 total_chapters: meta.page_count,
                 added_at: std::time::SystemTime::now()
@@ -137,12 +189,16 @@ pub async fn import_book(
                     .unwrap_or_default()
                     .as_secs() as i64,
                 format,
+                file_hash: Some(hash),
             }
         }
     };
 
     let conn = state.db.get().map_err(|e| e.to_string())?;
-    db::insert_book(&conn, &book).map_err(|e| e.to_string())?;
+    if let Err(e) = db::insert_book(&conn, &book) {
+        let _ = std::fs::remove_file(&library_path);
+        return Err(e.to_string());
+    }
 
     Ok(book)
 }
@@ -156,7 +212,24 @@ pub async fn get_library(state: State<'_, AppState>) -> Result<Vec<Book>, String
 #[tauri::command]
 pub async fn remove_book(book_id: String, state: State<'_, AppState>) -> Result<(), String> {
     let conn = state.db.get().map_err(|e| e.to_string())?;
-    db::delete_book(&conn, &book_id).map_err(|e| e.to_string())
+
+    // Fetch file path before deleting so we can remove the library file.
+    let file_path = db::get_book(&conn, &book_id)
+        .map_err(|e| e.to_string())?
+        .map(|b| b.file_path);
+
+    db::delete_book(&conn, &book_id).map_err(|e| e.to_string())?;
+
+    // Remove the physical file; ignore NotFound, log but don't fail on other errors.
+    if let Some(path) = file_path {
+        if let Err(e) = std::fs::remove_file(&path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                eprintln!("Warning: could not delete library file '{}': {}", path, e);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -317,6 +390,228 @@ pub async fn get_comic_page(
         BookFormat::Cbr => cbr::get_page_image(&book.file_path, page_index),
         _ => Err(format!("get_comic_page is not supported for {:?}", book.format)),
     }
+}
+
+// --- Collections ---
+
+#[tauri::command]
+pub async fn create_collection(
+    name: String,
+    coll_type: String,
+    icon: Option<String>,
+    color: Option<String>,
+    rules: Vec<NewRuleInput>,
+    state: State<'_, AppState>,
+) -> Result<Collection, String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    let collection_id = Uuid::new_v4().to_string();
+
+    let coll_type_enum = match coll_type.as_str() {
+        "automated" => CollectionType::Automated,
+        _ => CollectionType::Manual,
+    };
+
+    let rule_structs: Vec<CollectionRule> = rules
+        .into_iter()
+        .map(|r| CollectionRule {
+            id: Uuid::new_v4().to_string(),
+            collection_id: collection_id.clone(),
+            field: r.field,
+            operator: r.operator,
+            value: r.value,
+        })
+        .collect();
+
+    let collection = Collection {
+        id: collection_id,
+        name,
+        r#type: coll_type_enum,
+        icon,
+        color,
+        created_at: now,
+        updated_at: now,
+        rules: rule_structs,
+    };
+
+    let conn = state.db.get().map_err(|e| e.to_string())?;
+    db::insert_collection(&conn, &collection).map_err(|e| e.to_string())?;
+
+    Ok(collection)
+}
+
+#[tauri::command]
+pub async fn get_collections(state: State<'_, AppState>) -> Result<Vec<Collection>, String> {
+    let conn = state.db.get().map_err(|e| e.to_string())?;
+    db::list_collections(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_collection(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let conn = state.db.get().map_err(|e| e.to_string())?;
+    db::delete_collection(&conn, &id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn add_book_to_collection(
+    book_id: String,
+    collection_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let conn = state.db.get().map_err(|e| e.to_string())?;
+    let coll_type: String = conn
+        .query_row(
+            "SELECT type FROM collections WHERE id = ?1",
+            rusqlite::params![collection_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if coll_type == "automated" {
+        return Err("Cannot manually add books to an automated collection".to_string());
+    }
+    db::add_book_to_collection(&conn, &book_id, &collection_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn remove_book_from_collection(
+    book_id: String,
+    collection_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let conn = state.db.get().map_err(|e| e.to_string())?;
+    db::remove_book_from_collection(&conn, &book_id, &collection_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_books_in_collection(
+    collection_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<Book>, String> {
+    let conn = state.db.get().map_err(|e| e.to_string())?;
+    db::get_books_in_collection(&conn, &collection_id).map_err(|e| e.to_string())
+}
+
+// --- Library Folder ---
+
+#[derive(serde::Serialize)]
+pub struct LibraryFolderInfo {
+    pub path: String,
+    pub file_count: u64,
+    pub total_size_bytes: u64,
+}
+
+fn default_library_folder() -> Result<String, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Could not determine home directory".to_string())?;
+    Ok(home
+        .join("Documents")
+        .join("Folio Library")
+        .to_string_lossy()
+        .to_string())
+}
+
+#[tauri::command]
+pub async fn get_library_folder(state: State<'_, AppState>) -> Result<String, String> {
+    let conn = state.db.get().map_err(|e| e.to_string())?;
+    if let Some(folder) = db::get_setting(&conn, "library_folder").map_err(|e| e.to_string())? {
+        Ok(folder)
+    } else {
+        default_library_folder()
+    }
+}
+
+#[tauri::command]
+pub async fn get_library_folder_info(
+    state: State<'_, AppState>,
+) -> Result<LibraryFolderInfo, String> {
+    let conn = state.db.get().map_err(|e| e.to_string())?;
+    let path = if let Some(f) = db::get_setting(&conn, "library_folder").map_err(|e| e.to_string())? {
+        f
+    } else {
+        default_library_folder()?
+    };
+    let books = db::list_books(&conn).map_err(|e| e.to_string())?;
+
+    let mut file_count = 0u64;
+    let mut total_size_bytes = 0u64;
+    for book in &books {
+        if let Ok(meta) = std::fs::metadata(&book.file_path) {
+            if meta.is_file() {
+                file_count += 1;
+                total_size_bytes += meta.len();
+            }
+        }
+    }
+
+    Ok(LibraryFolderInfo { path, file_count, total_size_bytes })
+}
+
+#[tauri::command]
+pub async fn set_library_folder(
+    new_folder: String,
+    move_files: bool,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if !move_files {
+        let conn = state.db.get().map_err(|e| e.to_string())?;
+        db::set_setting(&conn, "library_folder", &new_folder).map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    // Atomic migration: gather books, plan moves, execute all-or-nothing.
+    let books = {
+        let conn = state.db.get().map_err(|e| e.to_string())?;
+        db::list_books(&conn).map_err(|e| e.to_string())?
+    };
+
+    std::fs::create_dir_all(&new_folder).map_err(|e| e.to_string())?;
+
+    // Build (src, dest) pairs.
+    let moves: Vec<(String, String)> = books
+        .iter()
+        .map(|book| {
+            let ext = std::path::Path::new(&book.file_path)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+            let dest = format!("{}/{}.{}", new_folder, book.id, ext);
+            (book.file_path.clone(), dest)
+        })
+        .collect();
+
+    // Attempt all moves; roll back on first failure.
+    let mut completed: Vec<(String, String)> = Vec::new();
+    for (src, dest) in &moves {
+        let result = std::fs::rename(src, dest).or_else(|_| {
+            // Cross-device fallback: copy then delete source.
+            std::fs::copy(src, dest).map(|_| ()).and_then(|_| std::fs::remove_file(src))
+        });
+        if let Err(e) = result {
+            // Roll back every completed move before returning the error.
+            for (orig_src, orig_dest) in &completed {
+                let _ = std::fs::rename(orig_dest, orig_src).or_else(|_| {
+                    std::fs::copy(orig_dest, orig_src)
+                        .map(|_| ())
+                        .and_then(|_| std::fs::remove_file(orig_dest))
+                });
+            }
+            return Err(format!("Failed to move '{}': {}", src, e));
+        }
+        completed.push((src.clone(), dest.clone()));
+    }
+
+    // All moves succeeded — persist new paths and setting atomically.
+    let mut conn = state.db.get().map_err(|e| e.to_string())?;
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    for (book, (_, dest)) in books.iter().zip(moves.iter()) {
+        db::update_book_file_path(&tx, &book.id, dest).map_err(|e| e.to_string())?;
+    }
+    db::set_setting(&tx, "library_folder", &new_folder).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+
+    Ok(())
 }
 
 // --- PDF ---
