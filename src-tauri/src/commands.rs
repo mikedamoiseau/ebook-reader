@@ -12,6 +12,34 @@ pub struct AppState {
     pub db: DbPool,
 }
 
+// --- Cover helpers ---
+
+/// Decode a `data:<mime>;base64,<payload>` URI and write it to
+/// `{data_dir}/covers/{book_id}/cover.{ext}`. Returns the file path on success.
+fn save_cover_from_data_uri(
+    data_uri: &str,
+    data_dir: &std::path::Path,
+    book_id: &str,
+) -> Option<String> {
+    use base64::{engine::general_purpose, Engine as _};
+
+    let rest = data_uri.strip_prefix("data:")?;
+    let (header, encoded) = rest.split_once(',')?;
+    let mime = header.strip_suffix(";base64")?;
+    let ext = match mime {
+        "image/png" => "png",
+        "image/webp" => "webp",
+        "image/gif" => "gif",
+        _ => "jpg",
+    };
+    let bytes = general_purpose::STANDARD.decode(encoded).ok()?;
+    let dir = data_dir.join("covers").join(book_id);
+    std::fs::create_dir_all(&dir).ok()?;
+    let path = dir.join(format!("cover.{ext}"));
+    std::fs::write(&path, &bytes).ok()?;
+    Some(path.to_string_lossy().to_string())
+}
+
 // --- Library management ---
 
 #[tauri::command]
@@ -129,12 +157,26 @@ pub async fn import_book(
                 let _ = std::fs::remove_file(&library_path);
                 e
             })?;
+            let cover_path = if let Ok(data_dir) = app.path().app_data_dir() {
+                let dir = data_dir.join("covers").join(&book_id);
+                if let Some(path) = cbz::get_page_image(&library_path, 0)
+                    .ok()
+                    .and_then(|uri| save_cover_from_data_uri(&uri, &data_dir, &book_id))
+                {
+                    cover_dir = Some(dir);
+                    Some(path)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
             Book {
                 id: book_id,
                 title: meta.title,
                 author: String::new(),
                 file_path: library_path.clone(),
-                cover_path: None,
+                cover_path,
                 total_chapters: meta.page_count,
                 added_at: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
