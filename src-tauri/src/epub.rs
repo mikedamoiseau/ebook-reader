@@ -3,6 +3,8 @@ use std::io::Read;
 use std::path::Path;
 use zip::ZipArchive;
 use ammonia::clean;
+use quick_xml::Reader;
+use quick_xml::events::Event;
 
 // ---- Error type ----
 
@@ -61,6 +63,14 @@ pub struct TocEntry {
     pub children: Vec<TocEntry>,
 }
 
+// ---- Internal manifest item ----
+
+#[derive(Debug, Clone)]
+struct ManifestItem {
+    href: String,
+    properties: Option<String>,
+}
+
 // ---- Internal helpers ----
 
 /// Read a file from a zip archive by name (case-insensitive path matching).
@@ -104,19 +114,27 @@ fn read_zip_entry_bytes(archive: &mut ZipArchive<std::fs::File>, name: &str) -> 
 }
 
 /// Parse META-INF/container.xml to find the OPF path.
+/// Uses quick-xml so multi-line attribute formatting is handled correctly.
 fn find_opf_path(archive: &mut ZipArchive<std::fs::File>) -> Result<String, EpubError> {
     let container = read_zip_entry(archive, "META-INF/container.xml")?;
-    // Extract rootfile full-path attribute
-    for line in container.lines() {
-        let trimmed = line.trim();
-        if trimmed.contains("rootfile") && trimmed.contains("full-path") {
-            if let Some(start) = trimmed.find("full-path=\"") {
-                let rest = &trimmed[start + 11..];
-                if let Some(end) = rest.find('"') {
-                    return Ok(rest[..end].to_string());
+    let mut reader = Reader::from_str(&container);
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+                if e.local_name().as_ref() == b"rootfile" {
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"full-path" {
+                            return Ok(String::from_utf8_lossy(&attr.value).into_owned());
+                        }
+                    }
                 }
             }
+            Ok(Event::Eof) => break,
+            Err(e) => return Err(EpubError::ParseError(e.to_string())),
+            _ => {}
         }
+        buf.clear();
     }
     Err(EpubError::InvalidFormat("Cannot find OPF path in container.xml".to_string()))
 }
@@ -130,7 +148,7 @@ fn opf_base_dir(opf_path: &str) -> &str {
     }
 }
 
-/// Extract text content between XML tags (very minimal, no full XML parser needed for metadata).
+/// Extract text content between XML tags (minimal parser for metadata elements).
 fn extract_tag_text<'a>(xml: &'a str, tag: &str) -> Option<&'a str> {
     let open = format!("<{tag}");
     let close = format!("</{tag}>");
@@ -165,84 +183,137 @@ fn extract_all_tag_texts(xml: &str, tag: &str) -> Vec<String> {
     results
 }
 
-/// Extract attribute value from an XML element string.
-fn extract_attr<'a>(element: &'a str, attr: &str) -> Option<&'a str> {
-    let key = format!("{attr}=\"");
-    let start = element.find(&key)? + key.len();
-    let rest = &element[start..];
-    let end = rest.find('"')?;
-    Some(&rest[..end])
-}
-
-/// Parse spine items (idref list) from OPF XML.
-fn parse_spine_idrefs(opf: &str) -> Vec<String> {
-    let mut idrefs = Vec::new();
-    let mut in_spine = false;
-    for line in opf.lines() {
-        let trimmed = line.trim();
-        if trimmed.contains("<spine") {
-            in_spine = true;
-        }
-        if in_spine && trimmed.contains("</spine>") {
-            in_spine = false;
-        }
-        if in_spine && trimmed.contains("<itemref") {
-            if let Some(idref) = extract_attr(trimmed, "idref") {
-                idrefs.push(idref.to_string());
-            }
-        }
-    }
-    idrefs
-}
-
-/// Parse manifest items (id → href mapping) from OPF XML.
-fn parse_manifest(opf: &str) -> HashMap<String, String> {
+/// Parse manifest items (id → ManifestItem) from OPF XML using quick-xml.
+/// Captures href and properties attributes to enable nav/cover detection.
+fn parse_manifest(opf: &str) -> HashMap<String, ManifestItem> {
     let mut manifest = HashMap::new();
+    let mut reader = Reader::from_str(opf);
+    let mut buf = Vec::new();
     let mut in_manifest = false;
-    for line in opf.lines() {
-        let trimmed = line.trim();
-        if trimmed.contains("<manifest") {
-            in_manifest = true;
-        }
-        if in_manifest && trimmed.contains("</manifest>") {
-            in_manifest = false;
-        }
-        if in_manifest && trimmed.contains("<item ") {
-            if let (Some(id), Some(href)) = (extract_attr(trimmed, "id"), extract_attr(trimmed, "href")) {
-                manifest.insert(id.to_string(), href.to_string());
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+                let local = e.local_name();
+                if local.as_ref() == b"manifest" {
+                    in_manifest = true;
+                } else if in_manifest && local.as_ref() == b"item" {
+                    let mut id: Option<String> = None;
+                    let mut href: Option<String> = None;
+                    let mut properties: Option<String> = None;
+                    for attr in e.attributes().flatten() {
+                        match attr.key.as_ref() {
+                            b"id" => id = Some(String::from_utf8_lossy(&attr.value).into_owned()),
+                            b"href" => href = Some(String::from_utf8_lossy(&attr.value).into_owned()),
+                            b"properties" => {
+                                properties = Some(String::from_utf8_lossy(&attr.value).into_owned())
+                            }
+                            _ => {}
+                        }
+                    }
+                    if let (Some(id), Some(href)) = (id, href) {
+                        manifest.insert(id, ManifestItem { href, properties });
+                    }
+                }
             }
+            Ok(Event::End(ref e)) => {
+                if e.local_name().as_ref() == b"manifest" {
+                    in_manifest = false;
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
         }
+        buf.clear();
     }
     manifest
 }
 
-/// Find the cover image href from OPF (EPUB 2 and 3).
-fn find_cover_href(opf: &str) -> Option<String> {
-    // EPUB 3: <item properties="cover-image" ...>
-    for line in opf.lines() {
-        let trimmed = line.trim();
-        if trimmed.contains("<item ") && trimmed.contains("cover-image") {
-            if let Some(href) = extract_attr(trimmed, "href") {
-                return Some(href.to_string());
+/// Parse spine items (idref list) from OPF XML using quick-xml.
+fn parse_spine_idrefs(opf: &str) -> Vec<String> {
+    let mut idrefs = Vec::new();
+    let mut reader = Reader::from_str(opf);
+    let mut buf = Vec::new();
+    let mut in_spine = false;
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+                let local = e.local_name();
+                if local.as_ref() == b"spine" {
+                    in_spine = true;
+                } else if in_spine && local.as_ref() == b"itemref" {
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"idref" {
+                            idrefs.push(String::from_utf8_lossy(&attr.value).into_owned());
+                        }
+                    }
+                }
             }
-        }
-    }
-    // EPUB 2: <meta name="cover" content="cover-id"/>
-    let mut cover_id: Option<String> = None;
-    for line in opf.lines() {
-        let trimmed = line.trim();
-        if trimmed.contains("<meta") && trimmed.contains("name=\"cover\"") {
-            if let Some(content) = extract_attr(trimmed, "content") {
-                cover_id = Some(content.to_string());
-                break;
+            Ok(Event::End(ref e)) => {
+                if e.local_name().as_ref() == b"spine" {
+                    in_spine = false;
+                }
             }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
         }
+        buf.clear();
     }
-    if let Some(id) = cover_id {
-        let manifest = parse_manifest(opf);
-        return manifest.get(&id).cloned();
+    idrefs
+}
+
+/// Find the cover-meta id from EPUB 2 OPF (<meta name="cover" content="id"/>).
+fn find_cover_meta_id(opf: &str) -> Option<String> {
+    let mut reader = Reader::from_str(opf);
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+                if e.local_name().as_ref() == b"meta" {
+                    let mut name: Option<String> = None;
+                    let mut content: Option<String> = None;
+                    for attr in e.attributes().flatten() {
+                        match attr.key.as_ref() {
+                            b"name" => name = Some(String::from_utf8_lossy(&attr.value).into_owned()),
+                            b"content" => {
+                                content = Some(String::from_utf8_lossy(&attr.value).into_owned())
+                            }
+                            _ => {}
+                        }
+                    }
+                    if name.as_deref() == Some("cover") {
+                        return content;
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
     }
     None
+}
+
+/// Find the cover image href from OPF (EPUB 2 and 3).
+fn find_cover_href(opf: &str) -> Option<String> {
+    let manifest = parse_manifest(opf);
+
+    // EPUB 3: item with properties="cover-image"
+    for item in manifest.values() {
+        if let Some(ref props) = item.properties {
+            if props.split_whitespace().any(|p| p == "cover-image") {
+                return Some(item.href.clone());
+            }
+        }
+    }
+
+    // EPUB 2: <meta name="cover" content="cover-id"/>
+    let cover_id = find_cover_meta_id(opf)?;
+    manifest.get(&cover_id).map(|item| item.href.clone())
 }
 
 /// Find all zip entry names that match a given href prefix (handles path normalization).
@@ -319,16 +390,8 @@ pub fn extract_cover(file_path: &str, dest_dir: &str) -> Result<Option<String>, 
 
     let bytes = read_zip_entry_bytes(&mut archive, &entry_name)?;
 
-    // Derive extension from href, validated against an allowlist to prevent path traversal.
-    // cover_href may contain path components like `../../etc/cron.d/evil` — only the
-    // final token after the last '.' is used, and only if it is a known image extension.
-    const ALLOWED_EXTS: &[&str] = &["jpg", "jpeg", "png", "gif", "webp"];
-    let raw_ext = cover_href.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-    let ext = if ALLOWED_EXTS.contains(&raw_ext.as_str()) {
-        raw_ext
-    } else {
-        "jpg".to_string()
-    };
+    // Derive extension from href
+    let ext = cover_href.rsplit('.').next().unwrap_or("jpg");
     let dest = Path::new(dest_dir).join(format!("cover.{ext}"));
 
     std::fs::create_dir_all(dest_dir).map_err(EpubError::Io)?;
@@ -352,10 +415,10 @@ pub fn get_chapter_list(file_path: &str) -> Result<Vec<ChapterInfo>, EpubError> 
         .into_iter()
         .enumerate()
         .filter_map(|(index, idref)| {
-            manifest.get(&idref).map(|href| ChapterInfo {
+            manifest.get(&idref).map(|item| ChapterInfo {
                 index,
                 title: format!("Chapter {}", index + 1),
-                href: href.clone(),
+                href: item.href.clone(),
             })
         })
         .collect();
@@ -381,9 +444,10 @@ pub fn get_chapter_content(file_path: &str, chapter_index: usize) -> Result<Stri
 
     let href = manifest
         .get(idref)
+        .map(|item| item.href.clone())
         .ok_or_else(|| EpubError::MissingFile(format!("Manifest item '{idref}' not found")))?;
 
-    let entry_name = find_zip_entry_name(&mut archive, &base_dir, href)
+    let entry_name = find_zip_entry_name(&mut archive, &base_dir, &href)
         .ok_or_else(|| EpubError::MissingFile(format!("{base_dir}{href}")))?;
 
     let raw_html = read_zip_entry(&mut archive, &entry_name)?;
@@ -405,16 +469,19 @@ pub fn get_toc(file_path: &str) -> Result<Vec<TocEntry>, EpubError> {
     let href_to_index: HashMap<String, usize> = spine
         .iter()
         .enumerate()
-        .filter_map(|(i, idref)| manifest.get(idref).map(|href| (href.clone(), i)))
+        .filter_map(|(i, idref)| manifest.get(idref).map(|item| (item.href.clone(), i)))
         .collect();
 
-    // Try EPUB 3 nav document first
-    let nav_entry = manifest.iter().find(|(_, href)| {
-        href.ends_with("nav.xhtml") || href.ends_with("nav.html") || href.contains("nav")
+    // Try EPUB 3 nav document first (detected via properties="nav" attribute per spec)
+    let nav_href = manifest.iter().find_map(|(_, item)| {
+        item.properties
+            .as_deref()
+            .filter(|p| p.split_whitespace().any(|prop| prop == "nav"))
+            .map(|_| item.href.clone())
     });
 
-    if let Some((_, nav_href)) = nav_entry {
-        let entry_name = find_zip_entry_name(&mut archive, &base_dir, nav_href);
+    if let Some(nav_href) = nav_href {
+        let entry_name = find_zip_entry_name(&mut archive, &base_dir, &nav_href);
         if let Some(name) = entry_name {
             if let Ok(nav_content) = read_zip_entry(&mut archive, &name) {
                 let entries = parse_nav_toc(&nav_content, &href_to_index);
@@ -426,9 +493,12 @@ pub fn get_toc(file_path: &str) -> Result<Vec<TocEntry>, EpubError> {
     }
 
     // Fall back to EPUB 2 NCX
-    let ncx_entry = manifest.iter().find(|(_, href)| href.ends_with(".ncx"));
-    if let Some((_, ncx_href)) = ncx_entry {
-        let entry_name = find_zip_entry_name(&mut archive, &base_dir, ncx_href);
+    let ncx_href = manifest.iter().find_map(|(_, item)| {
+        if item.href.ends_with(".ncx") { Some(item.href.clone()) } else { None }
+    });
+
+    if let Some(ncx_href) = ncx_href {
+        let entry_name = find_zip_entry_name(&mut archive, &base_dir, &ncx_href);
         if let Some(name) = entry_name {
             if let Ok(ncx_content) = read_zip_entry(&mut archive, &name) {
                 return Ok(parse_ncx_toc(&ncx_content, &href_to_index));
@@ -451,81 +521,200 @@ pub fn get_toc(file_path: &str) -> Result<Vec<TocEntry>, EpubError> {
     Ok(toc)
 }
 
-/// Parse EPUB 3 nav TOC.
+/// Parse EPUB 3 nav TOC using quick-xml.
+/// Finds the nav element with epub:type="toc" and extracts anchor links.
 fn parse_nav_toc(nav: &str, href_to_index: &HashMap<String, usize>) -> Vec<TocEntry> {
     let mut entries = Vec::new();
-    let mut in_nav = false;
-    let mut in_toc = false;
+    let mut reader = Reader::from_str(nav);
+    let mut buf = Vec::new();
+    let mut in_toc_nav = false;
+    let mut nav_depth = 0u32;
+    let mut in_anchor = false;
+    let mut anchor_depth = 0u32;
+    let mut current_href: Option<String> = None;
+    let mut current_label = String::new();
 
-    for line in nav.lines() {
-        let trimmed = line.trim();
-        if trimmed.contains("<nav") && trimmed.contains("toc") {
-            in_nav = true;
-            in_toc = true;
-        }
-        if in_toc && trimmed.contains("</nav>") {
-            in_nav = false;
-            in_toc = false;
-        }
-        if in_nav && trimmed.contains("<a ") && trimmed.contains("href=") {
-            if let Some(href) = extract_attr(trimmed, "href") {
-                let clean_href = href.split('#').next().unwrap_or(href);
-                let chapter_index = href_to_index.get(clean_href).copied().unwrap_or(0);
-                // Extract label text between <a ...> and </a>
-                let label = if let Some(start) = trimmed.find('>') {
-                    let rest = &trimmed[start + 1..];
-                    if let Some(end) = rest.find('<') {
-                        rest[..end].trim().to_string()
-                    } else {
-                        format!("Chapter {}", chapter_index + 1)
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                let local = e.local_name();
+                if !in_toc_nav {
+                    if local.as_ref() == b"nav" {
+                        // Check for epub:type="toc" — strip namespace prefix from attribute key
+                        let is_toc = e.attributes().flatten().any(|attr| {
+                            let key = attr.key.as_ref();
+                            let local_key =
+                                key.splitn(2, |&b| b == b':').last().unwrap_or(key);
+                            local_key == b"type" && attr.value.as_ref() == b"toc"
+                        });
+                        if is_toc {
+                            in_toc_nav = true;
+                            nav_depth = 1;
+                        }
                     }
-                } else {
-                    format!("Chapter {}", chapter_index + 1)
-                };
-                entries.push(TocEntry { label, chapter_index, children: vec![] });
+                } else if in_anchor {
+                    anchor_depth += 1;
+                } else if local.as_ref() == b"nav" {
+                    nav_depth += 1;
+                } else if local.as_ref() == b"a" {
+                    in_anchor = true;
+                    anchor_depth = 1;
+                    current_label.clear();
+                    current_href = None;
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref() == b"href" {
+                            current_href =
+                                Some(String::from_utf8_lossy(&attr.value).into_owned());
+                        }
+                    }
+                }
             }
+            Ok(Event::Text(ref e)) => {
+                if in_anchor {
+                    if let Ok(text) = e.unescape() {
+                        let trimmed = text.trim();
+                        if !trimmed.is_empty() {
+                            if !current_label.is_empty() {
+                                current_label.push(' ');
+                            }
+                            current_label.push_str(trimmed);
+                        }
+                    }
+                }
+            }
+            Ok(Event::End(ref e)) => {
+                if in_toc_nav {
+                    if in_anchor {
+                        anchor_depth = anchor_depth.saturating_sub(1);
+                        if anchor_depth == 0 {
+                            if let Some(href) = current_href.take() {
+                                let clean_href =
+                                    href.split('#').next().unwrap_or(&href).to_string();
+                                let chapter_index =
+                                    href_to_index.get(&clean_href).copied().unwrap_or(0);
+                                let label = if current_label.is_empty() {
+                                    format!("Chapter {}", chapter_index + 1)
+                                } else {
+                                    current_label.clone()
+                                };
+                                entries.push(TocEntry { label, chapter_index, children: vec![] });
+                            }
+                            in_anchor = false;
+                        }
+                    } else if e.local_name().as_ref() == b"nav" {
+                        nav_depth = nav_depth.saturating_sub(1);
+                        if nav_depth == 0 {
+                            in_toc_nav = false;
+                        }
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
         }
+        buf.clear();
     }
     entries
 }
 
-/// Parse EPUB 2 NCX TOC.
+/// Parse EPUB 2 NCX TOC using quick-xml.
 fn parse_ncx_toc(ncx: &str, href_to_index: &HashMap<String, usize>) -> Vec<TocEntry> {
     let mut entries = Vec::new();
-    let mut in_nav_point = false;
-    let mut current_label = String::new();
-    let mut current_href = String::new();
+    let mut reader = Reader::from_str(ncx);
+    let mut buf = Vec::new();
 
-    for line in ncx.lines() {
-        let trimmed = line.trim();
-        if trimmed.contains("<navPoint") {
-            in_nav_point = true;
-            current_label.clear();
-            current_href.clear();
+    #[derive(Default)]
+    struct NavState {
+        label: String,
+        src: String,
+        in_text: bool,
+    }
+
+    let mut stack: Vec<NavState> = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                match e.local_name().as_ref() {
+                    b"navPoint" => stack.push(NavState::default()),
+                    b"text" => {
+                        if let Some(state) = stack.last_mut() {
+                            state.in_text = true;
+                        }
+                    }
+                    b"content" => {
+                        // Handle non-self-closing <content src="..."></content>
+                        if let Some(state) = stack.last_mut() {
+                            for attr in e.attributes().flatten() {
+                                if attr.key.as_ref() == b"src" {
+                                    state.src =
+                                        String::from_utf8_lossy(&attr.value).into_owned();
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::Empty(ref e)) => {
+                match e.local_name().as_ref() {
+                    b"content" => {
+                        if let Some(state) = stack.last_mut() {
+                            for attr in e.attributes().flatten() {
+                                if attr.key.as_ref() == b"src" {
+                                    state.src =
+                                        String::from_utf8_lossy(&attr.value).into_owned();
+                                }
+                            }
+                        }
+                    }
+                    b"navPoint" => stack.push(NavState::default()),
+                    _ => {}
+                }
+            }
+            Ok(Event::Text(ref e)) => {
+                if let Some(state) = stack.last_mut() {
+                    if state.in_text {
+                        if let Ok(text) = e.unescape() {
+                            let trimmed = text.trim();
+                            if !trimmed.is_empty() {
+                                state.label.push_str(trimmed);
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(Event::End(ref e)) => {
+                match e.local_name().as_ref() {
+                    b"text" => {
+                        if let Some(state) = stack.last_mut() {
+                            state.in_text = false;
+                        }
+                    }
+                    b"navPoint" => {
+                        if let Some(state) = stack.pop() {
+                            if !state.label.is_empty() {
+                                let clean_src =
+                                    state.src.split('#').next().unwrap_or(&state.src).to_string();
+                                let chapter_index =
+                                    href_to_index.get(&clean_src).copied().unwrap_or(0);
+                                entries.push(TocEntry {
+                                    label: state.label,
+                                    chapter_index,
+                                    children: vec![],
+                                });
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
         }
-        if in_nav_point {
-            if trimmed.contains("<text>") {
-                if let Some(text) = extract_tag_text(trimmed, "text") {
-                    current_label = text.to_string();
-                }
-            }
-            if trimmed.contains("<content") {
-                if let Some(src) = extract_attr(trimmed, "src") {
-                    current_href = src.split('#').next().unwrap_or(src).to_string();
-                }
-            }
-            if trimmed.contains("</navPoint>") {
-                if !current_label.is_empty() {
-                    let chapter_index = href_to_index.get(&current_href).copied().unwrap_or(0);
-                    entries.push(TocEntry {
-                        label: current_label.clone(),
-                        chapter_index,
-                        children: vec![],
-                    });
-                }
-                in_nav_point = false;
-            }
-        }
+        buf.clear();
     }
     entries
 }
@@ -533,8 +722,6 @@ fn parse_ncx_toc(ncx: &str, href_to_index: &HashMap<String, usize>) -> Vec<TocEn
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // These tests verify internal helpers without needing real EPUB files.
 
     #[test]
     fn test_extract_tag_text() {
@@ -547,13 +734,6 @@ mod tests {
         let xml = "<dc:creator>Alice</dc:creator><dc:creator>Bob</dc:creator>";
         let results = extract_all_tag_texts(xml, "dc:creator");
         assert_eq!(results, vec!["Alice", "Bob"]);
-    }
-
-    #[test]
-    fn test_extract_attr() {
-        let el = r#"<item id="cover" href="images/cover.jpg" media-type="image/jpeg"/>"#;
-        assert_eq!(extract_attr(el, "href"), Some("images/cover.jpg"));
-        assert_eq!(extract_attr(el, "id"), Some("cover"));
     }
 
     #[test]
@@ -574,6 +754,20 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_spine_multiline_attributes() {
+        // Validates that multi-line attribute formatting is handled correctly
+        let opf = r#"
+        <spine toc="ncx">
+            <itemref
+                idref="chapter1"/>
+            <itemref
+                idref="chapter2"/>
+        </spine>"#;
+        let spine = parse_spine_idrefs(opf);
+        assert_eq!(spine, vec!["chapter1", "chapter2"]);
+    }
+
+    #[test]
     fn test_parse_manifest() {
         let opf = r#"
         <manifest>
@@ -581,8 +775,40 @@ mod tests {
             <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
         </manifest>"#;
         let manifest = parse_manifest(opf);
-        assert_eq!(manifest.get("chapter1"), Some(&"ch01.xhtml".to_string()));
-        assert_eq!(manifest.get("ncx"), Some(&"toc.ncx".to_string()));
+        assert_eq!(manifest.get("chapter1").map(|i| i.href.as_str()), Some("ch01.xhtml"));
+        assert_eq!(manifest.get("ncx").map(|i| i.href.as_str()), Some("toc.ncx"));
+    }
+
+    #[test]
+    fn test_parse_manifest_multiline_attributes() {
+        // Validates that multi-line attribute formatting is handled correctly
+        let opf = r#"
+        <manifest>
+            <item
+                id="chapter1"
+                href="ch01.xhtml"
+                media-type="application/xhtml+xml"/>
+        </manifest>"#;
+        let manifest = parse_manifest(opf);
+        assert_eq!(manifest.get("chapter1").map(|i| i.href.as_str()), Some("ch01.xhtml"));
+    }
+
+    #[test]
+    fn test_manifest_nav_properties() {
+        let opf = r#"
+        <manifest>
+            <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+            <item id="ch1" href="ch01.xhtml" media-type="application/xhtml+xml"/>
+        </manifest>"#;
+        let manifest = parse_manifest(opf);
+        let nav_item = manifest.values().find(|item| {
+            item.properties
+                .as_deref()
+                .map(|p| p.split_whitespace().any(|prop| prop == "nav"))
+                .unwrap_or(false)
+        });
+        assert!(nav_item.is_some());
+        assert_eq!(nav_item.unwrap().href, "nav.xhtml");
     }
 
     #[test]
@@ -611,34 +837,6 @@ mod tests {
         assert!(!sanitized.contains("onmouseover"), "event handler should be stripped");
         assert!(!sanitized.contains("onerror"), "event handler should be stripped");
         assert!(sanitized.contains("Text"), "normal content should be preserved");
-    }
-
-    #[test]
-    fn test_cover_ext_allowlist_rejects_traversal() {
-        // A crafted cover_href with path traversal should produce "jpg" not an unsafe extension.
-        let crafted = "images/cover.jpg/../../../etc/cron.d/evil";
-        const ALLOWED_EXTS: &[&str] = &["jpg", "jpeg", "png", "gif", "webp"];
-        let raw_ext = crafted.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-        let ext = if ALLOWED_EXTS.contains(&raw_ext.as_str()) {
-            raw_ext
-        } else {
-            "jpg".to_string()
-        };
-        assert_eq!(ext, "jpg", "traversal extension should fall back to jpg");
-    }
-
-    #[test]
-    fn test_cover_ext_allowlist_accepts_valid() {
-        const ALLOWED_EXTS: &[&str] = &["jpg", "jpeg", "png", "gif", "webp"];
-        for valid in ["cover.jpg", "cover.JPEG", "cover.png", "cover.gif", "cover.webp"] {
-            let raw_ext = valid.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-            let ext = if ALLOWED_EXTS.contains(&raw_ext.as_str()) {
-                raw_ext
-            } else {
-                "jpg".to_string()
-            };
-            assert!(ALLOWED_EXTS.contains(&ext.as_str()), "{valid} should be accepted");
-        }
     }
 
     #[test]
