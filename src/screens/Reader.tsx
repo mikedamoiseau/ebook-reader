@@ -40,7 +40,7 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
   const navigate = useNavigate();
   const { fontSize, setFontSize, fontFamily } = useTheme();
 
-  const [, setBook] = useState<BookInfo | null>(null);
+  const [bookTitle, setBookTitle] = useState("");
   const [toc, setToc] = useState<TocEntry[]>([]);
   const [chapterIndex, setChapterIndex] = useState(0);
   const [totalChapters, setTotalChapters] = useState(0);
@@ -73,11 +73,10 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
 
         if (cancelled) return;
 
-        setBook(bookInfo);
+        setBookTitle(bookInfo.title);
         setToc(tocEntries);
         setTotalChapters(bookInfo.total_chapters);
 
-        // Restore reading progress
         try {
           const progress = await invoke<ReadingProgress | null>(
             "get_reading_progress",
@@ -124,7 +123,6 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
         if (!cancelled) {
           setChapterHtml(html);
           setChapterError(null);
-          // Scroll to top unless restoring a saved position
           if (!restoringScroll.current && scrollContainerRef.current) {
             scrollContainerRef.current.scrollTop = 0;
           }
@@ -179,7 +177,6 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
     [bookId, chapterIndex, scrollProgress]
   );
 
-  // Save progress when chapter changes
   useEffect(() => {
     if (!bookId || loading) return;
     saveProgress(0);
@@ -203,7 +200,6 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
     return () => container.removeEventListener("scroll", handleScroll);
   }, [chapterHtml]);
 
-  // Save progress on unmount or when leaving
   useEffect(() => {
     return () => {
       saveProgress();
@@ -256,26 +252,28 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
   // ---- Font family CSS value ----
 
   const fontFamilyCss =
-    fontFamily === "serif" ? "Georgia, serif" : "system-ui, sans-serif";
+    fontFamily === "serif"
+      ? '"Lora", Georgia, serif'
+      : '"DM Sans", system-ui, sans-serif';
 
   // ---- Render ----
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-gray-500 text-lg">Loading book...</div>
+      <div className="flex items-center justify-center h-full bg-paper">
+        <div className="text-sm text-ink-muted">Loading…</div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
-        <div className="text-red-500 text-lg">Failed to load book</div>
-        <p className="text-gray-500 text-sm max-w-md text-center">{error}</p>
+      <div className="flex flex-col items-center justify-center h-full gap-4 p-8 bg-paper">
+        <div className="text-ink font-medium">Failed to load book</div>
+        <p className="text-ink-muted text-sm max-w-md text-center">{error}</p>
         <button
           onClick={() => navigate("/")}
-          className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+          className="px-4 py-2 bg-accent text-white rounded-xl hover:bg-accent-hover transition-colors text-sm font-medium"
         >
           Back to Library
         </button>
@@ -284,36 +282,39 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
   }
 
   return (
-    <div className="flex h-full relative">
-      {/* TOC Sidebar */}
+    <div className="flex h-full relative bg-paper">
+      {/* TOC Sidebar — slide-in animation */}
       {tocOpen && (
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-black/30 z-10"
+            className="fixed inset-0 bg-ink/20 z-10 animate-fade-in"
             onClick={() => setTocOpen(false)}
           />
           {/* Sidebar */}
-          <aside className="fixed left-0 top-0 bottom-0 w-72 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 z-20 flex flex-col shadow-xl">
-            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-              <h2 className="font-semibold text-gray-800 dark:text-gray-200">
-                Table of Contents
+          <aside className="fixed left-0 top-0 bottom-0 w-72 bg-surface border-r border-warm-border z-20 flex flex-col shadow-[4px_0_24px_-4px_rgba(44,34,24,0.12)] animate-slide-in-left">
+            <div className="px-5 py-4 border-b border-warm-border flex items-center justify-between">
+              <h2 className="font-serif text-base font-semibold text-ink">
+                Contents
               </h2>
               <button
                 onClick={() => setTocOpen(false)}
-                className="p-1 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                className="p-1 text-ink-muted hover:text-ink transition-colors rounded"
                 aria-label="Close table of contents"
               >
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                  <path
-                    d="M15 5L5 15M5 5l10 10"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                  />
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                  <path d="M15 5L5 15M5 5l10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 </svg>
               </button>
             </div>
+
+            {/* Book title */}
+            {bookTitle && (
+              <div className="px-5 py-3 border-b border-warm-border">
+                <p className="font-serif text-sm font-medium text-ink leading-snug truncate">{bookTitle}</p>
+              </div>
+            )}
+
             <nav
               className="flex-1 overflow-y-auto py-2"
               aria-label="Table of contents"
@@ -335,59 +336,48 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
       {/* Main reading area */}
       <div className="flex flex-col flex-1 min-w-0">
         {/* Header */}
-        <header className="flex items-center gap-3 px-4 py-2 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shrink-0">
+        <header className="flex items-center gap-2 px-4 py-2.5 border-b border-warm-border bg-surface shrink-0">
           <button
             onClick={() => navigate("/")}
-            className="p-1.5 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+            className="p-1.5 text-ink-muted hover:text-ink transition-colors rounded-lg hover:bg-warm-subtle"
             aria-label="Back to library"
           >
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path
-                d="M12 4l-6 6 6 6"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M12 4l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
 
           <button
             onClick={() => setTocOpen(true)}
-            className="p-1.5 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+            className="p-1.5 text-ink-muted hover:text-ink transition-colors rounded-lg hover:bg-warm-subtle"
             aria-label="Open table of contents"
           >
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path
-                d="M3 5h14M3 10h14M3 15h14"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+              <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
             </svg>
           </button>
 
-          <h1 className="flex-1 text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
+          <h1 className="flex-1 text-sm text-ink-muted truncate font-medium px-1">
             {currentChapterTitle}
           </h1>
 
           {/* Font size controls */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5 mr-1">
             <button
               onClick={() => setFontSize(fontSize - 2)}
               disabled={fontSize <= MIN_FONT_SIZE}
-              className="px-2 py-1 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors disabled:opacity-30"
+              className="px-2 py-1 text-xs text-ink-muted hover:text-ink hover:bg-warm-subtle rounded transition-colors disabled:opacity-30"
               aria-label="Decrease font size"
             >
-              A-
+              A−
             </button>
-            <span className="text-xs text-gray-400 w-8 text-center tabular-nums">
+            <span className="text-xs text-ink-muted w-7 text-center tabular-nums">
               {fontSize}
             </span>
             <button
               onClick={() => setFontSize(fontSize + 2)}
               disabled={fontSize >= MAX_FONT_SIZE}
-              className="px-2 py-1 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors disabled:opacity-30"
+              className="px-2 py-1 text-xs text-ink-muted hover:text-ink hover:bg-warm-subtle rounded transition-colors disabled:opacity-30"
               aria-label="Increase font size"
             >
               A+
@@ -397,10 +387,10 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
           {/* Settings button */}
           <button
             onClick={onOpenSettings}
-            className="p-1.5 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+            className="p-1.5 text-ink-muted hover:text-ink transition-colors rounded-lg hover:bg-warm-subtle"
             aria-label="Open settings"
           >
-            <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+            <svg width="17" height="17" viewBox="0 0 20 20" fill="none">
               <path
                 d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"
                 stroke="currentColor"
@@ -418,56 +408,65 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
         {/* Chapter content */}
         <div
           ref={scrollContainerRef}
-          className="flex-1 overflow-y-auto scroll-smooth"
+          className="flex-1 overflow-y-auto"
         >
           {chapterError ? (
-            <div className="max-w-[680px] mx-auto px-6 py-8">
-              <p className="text-red-500">Failed to load chapter: {chapterError}</p>
+            <div className="max-w-[680px] mx-auto px-8 py-10">
+              <p className="text-red-500 text-sm">Failed to load chapter: {chapterError}</p>
             </div>
           ) : (
             <div
               ref={contentRef}
-              className="reader-content max-w-[680px] mx-auto px-6 py-8"
+              className="reader-content max-w-[680px] mx-auto px-8 py-10"
               style={{
                 fontSize: `${fontSize}px`,
-                lineHeight: 1.7,
+                lineHeight: 1.8,
                 fontFamily: fontFamilyCss,
               }}
               dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(chapterHtml) }}
             />
           )}
 
-          {/* Chapter navigation at bottom of content */}
-          <div className="max-w-[680px] mx-auto px-6 pb-8 flex items-center justify-between">
+          {/* Chapter navigation */}
+          <div className="max-w-[680px] mx-auto px-8 pb-12 flex items-center justify-between gap-4">
             <button
               onClick={prevChapter}
               disabled={chapterIndex <= 0}
-              className="px-4 py-2 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 px-4 py-2 text-sm text-ink-muted bg-warm-subtle hover:bg-warm-border rounded-xl transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             >
+              <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+                <path d="M12 4l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
               Previous
             </button>
+            <span className="text-xs text-ink-muted tabular-nums">
+              {chapterIndex + 1} / {totalChapters}
+            </span>
             <button
               onClick={nextChapter}
               disabled={chapterIndex >= totalChapters - 1}
-              className="px-4 py-2 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 px-4 py-2 text-sm text-ink-muted bg-warm-subtle hover:bg-warm-border rounded-xl transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
             >
               Next
+              <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+                <path d="M8 4l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </button>
           </div>
         </div>
 
         {/* Progress bar */}
-        <footer className="shrink-0 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 px-4 py-1.5 flex items-center gap-3">
-          <span className="text-xs text-gray-500 tabular-nums whitespace-nowrap">
-            Chapter {chapterIndex + 1} / {totalChapters}
+        <footer className="shrink-0 border-t border-warm-border bg-surface px-5 py-2 flex items-center gap-3">
+          <span className="text-[11px] text-ink-muted tabular-nums whitespace-nowrap">
+            Ch. {chapterIndex + 1} / {totalChapters}
           </span>
-          <div className="flex-1 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+          <div className="flex-1 h-[3px] bg-warm-subtle rounded-full overflow-hidden">
             <div
-              className="h-full bg-blue-500 rounded-full transition-all duration-150"
+              className="h-full bg-accent rounded-full transition-all duration-200"
               style={{ width: `${scrollProgress * 100}%` }}
             />
           </div>
-          <span className="text-xs text-gray-400 tabular-nums w-8 text-right">
+          <span className="text-[11px] text-ink-muted tabular-nums w-8 text-right">
             {Math.round(scrollProgress * 100)}%
           </span>
         </footer>
@@ -476,7 +475,7 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
   );
 }
 
-// ---- TOC Item (recursive for nested entries) ----
+// ---- TOC Item (recursive) ----
 
 function TocItem({
   entry,
@@ -495,13 +494,16 @@ function TocItem({
     <>
       <button
         onClick={() => onSelect(entry.chapter_index)}
-        className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+        className={`w-full text-left py-2 text-sm transition-colors ${
           isActive
-            ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium"
-            : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+            ? "text-accent font-medium bg-accent-light"
+            : "text-ink-muted hover:text-ink hover:bg-warm-subtle"
         }`}
-        style={{ paddingLeft: `${16 + depth * 16}px` }}
+        style={{ paddingLeft: `${20 + depth * 14}px`, paddingRight: "16px" }}
       >
+        {isActive && (
+          <span className="inline-block w-1 h-1 rounded-full bg-accent mr-2 align-middle" />
+        )}
         {entry.label}
       </button>
       {entry.children.map((child) => (

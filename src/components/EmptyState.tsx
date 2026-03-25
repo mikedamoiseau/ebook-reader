@@ -4,39 +4,53 @@ interface EmptyStateProps {
 
 export default function EmptyState({ onImport }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center h-full max-w-xs mx-auto text-center">
-      <div className="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-2xl flex items-center justify-center mb-6">
-        <svg
-          width="40"
-          height="40"
-          viewBox="0 0 24 24"
-          fill="none"
-          className="text-gray-400"
-        >
-          <path
-            d="M4 19.5v-15A2.5 2.5 0 016.5 2H20v20H6.5a2.5 2.5 0 010-5H20"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+    <div className="flex flex-col items-center justify-center h-full max-w-xs mx-auto text-center gap-0">
+      {/* Book stack illustration */}
+      <div className="mb-8 relative w-28 h-28 flex items-end justify-center">
+        {/* Back book */}
+        <div className="absolute bottom-0 left-3 w-16 h-20 rounded-sm bg-warm-subtle border border-warm-border shadow-sm rotate-[-8deg] origin-bottom" />
+        {/* Middle book */}
+        <div className="absolute bottom-0 left-6 w-16 h-[72px] rounded-sm bg-warm-border shadow-sm rotate-[3deg] origin-bottom" />
+        {/* Front book */}
+        <div className="relative w-16 h-[84px] rounded-sm bg-accent-light border border-accent/30 shadow-md flex flex-col items-center justify-center gap-2">
+          <div className="w-8 h-px bg-accent/40 rounded" />
+          <div className="w-6 h-px bg-accent/30 rounded" />
+          <div className="w-8 h-px bg-accent/40 rounded" />
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            className="text-accent mt-1"
+          >
+            <path
+              d="M4 19.5v-15A2.5 2.5 0 016.5 2H20v20H6.5a2.5 2.5 0 010-5H20"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
       </div>
-      <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
-        Your library is empty
+
+      <h2 className="font-serif text-2xl font-semibold text-ink mb-2">
+        Your shelf awaits
       </h2>
-      <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-        Import an EPUB file to get started.
+      <p className="text-sm text-ink-muted mb-7 leading-relaxed">
+        Add your first EPUB and begin your reading journey.
       </p>
+
       <button
         type="button"
         onClick={onImport}
-        className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:outline-2 focus:outline-blue-500 focus:outline-offset-2 active:bg-blue-800 transition-colors duration-150"
+        className="px-5 py-2.5 bg-accent text-white text-sm font-medium rounded-xl hover:bg-accent-hover focus:outline-2 focus:outline-accent focus:outline-offset-2 active:scale-[0.97] transition-all duration-150 shadow-sm"
       >
-        Import a book
+        Add a book
       </button>
-      <p className="mt-4 text-xs text-gray-400 dark:text-gray-500">
-        or drag and drop an .epub file anywhere
+
+      <p className="mt-5 text-xs text-ink-muted">
+        or drag &amp; drop an .epub file anywhere
       </p>
     </div>
   );

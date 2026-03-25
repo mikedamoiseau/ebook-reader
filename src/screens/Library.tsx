@@ -39,7 +39,6 @@ export default function Library() {
       const library: Book[] = await invoke("get_library");
       setBooks(library);
 
-      // Load progress for each book
       const progEntries = await Promise.all(
         library.map(async (book) => {
           try {
@@ -105,7 +104,6 @@ export default function Library() {
     }
   }, [loadLibrary]);
 
-  // Drag and drop via Tauri v2 webview events (DOM File objects don't expose paths)
   useEffect(() => {
     let unlisten: (() => void) | undefined;
 
@@ -144,7 +142,6 @@ export default function Library() {
     };
   }, [loadLibrary]);
 
-  // Filter books by search
   const filtered = books.filter((book) => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -159,48 +156,33 @@ export default function Library() {
 
   if (!loaded) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <p className="text-lg text-gray-500 dark:text-gray-400">
-          Loading library…
-        </p>
+      <div className="flex items-center justify-center h-full bg-paper">
+        <p className="text-sm text-ink-muted">Loading library…</p>
       </div>
     );
   }
 
   return (
-    <div
-      className="flex flex-col h-full relative"
-    >
+    <div className="flex flex-col h-full relative bg-paper">
       {/* Toolbar */}
       {hasBooks && (
-        <div className="shrink-0 h-14 px-6 flex items-center gap-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+        <div className="shrink-0 h-14 px-6 flex items-center gap-3 border-b border-warm-border bg-surface">
           {/* Search input */}
           <div className="flex-1 relative">
             <svg
-              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-muted pointer-events-none"
               viewBox="0 0 24 24"
               fill="none"
             >
-              <circle
-                cx="11"
-                cy="11"
-                r="7"
-                stroke="currentColor"
-                strokeWidth="2"
-              />
-              <path
-                d="M21 21l-4.35-4.35"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
+              <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+              <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
             <input
               type="text"
-              placeholder="Search books…"
+              placeholder="Search by title or author…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full h-9 pl-9 pr-3 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 border-none focus:outline-2 focus:outline-blue-500 focus:-outline-offset-2"
+              className="w-full h-9 pl-9 pr-3 bg-warm-subtle rounded-lg text-sm text-ink placeholder-ink-muted border border-transparent focus:border-accent/40 focus:outline-none focus:bg-surface transition-colors duration-150"
             />
           </div>
           <ImportButton onClick={handleImport} loading={importing} />
@@ -209,21 +191,16 @@ export default function Library() {
 
       {/* Error toast */}
       {error && (
-        <div className="mx-6 mt-3 px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm rounded-lg flex items-center gap-2">
+        <div className="mx-6 mt-3 px-4 py-2.5 bg-red-50 text-red-700 text-sm rounded-xl flex items-center gap-2 border border-red-200">
           <span className="flex-1">{error}</span>
           <button
             type="button"
             onClick={() => setError(null)}
-            className="text-red-500 hover:text-red-700 dark:hover:text-red-300 p-1"
+            className="text-red-400 hover:text-red-600 p-1 rounded transition-colors"
             aria-label="Dismiss error"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M18 6L6 18M6 6l12 12"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
           </button>
         </div>
@@ -234,7 +211,7 @@ export default function Library() {
         {!hasBooks ? (
           <EmptyState onImport={handleImport} />
         ) : hasResults ? (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-6">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(148px,1fr))] gap-5">
             {filtered.map((book) => (
               <BookCard
                 key={book.id}
@@ -251,10 +228,10 @@ export default function Library() {
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-center">
-            <p className="text-base font-medium text-gray-900 dark:text-gray-100">
+            <p className="text-base font-medium text-ink">
               No results for &ldquo;{search}&rdquo;
             </p>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            <p className="text-sm text-ink-muted mt-1">
               Try a different title or author name.
             </p>
           </div>
@@ -263,15 +240,9 @@ export default function Library() {
 
       {/* Drag overlay */}
       {dragging && (
-        <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center bg-blue-500/[0.08] border-2 border-dashed border-blue-500 rounded-inherit">
+        <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center bg-accent/[0.06] border-2 border-dashed border-accent rounded-inherit">
           <div className="flex flex-col items-center gap-2">
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              className="text-blue-700 dark:text-blue-300"
-            >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="text-accent">
               <path
                 d="M12 3v14m0 0l-5-5m5 5l5-5M5 21h14"
                 stroke="currentColor"
@@ -280,8 +251,8 @@ export default function Library() {
                 strokeLinejoin="round"
               />
             </svg>
-            <span className="text-base font-medium text-blue-700 dark:text-blue-300">
-              Drop to import
+            <span className="text-sm font-medium text-accent">
+              Drop to add books
             </span>
           </div>
         </div>

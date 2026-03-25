@@ -2,44 +2,147 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ── Design tokens ──────────────────────────────────────────── */
+
 :root {
-  --color-accent: #3b82f6;
-  --color-accent-hover: #2563eb;
-  --reading-max-width: 680px;
-  --reading-line-height: 1.7;
+  --paper:        #faf8f3;
+  --surface:      #ffffff;
+  --ink:          #2c2218;
+  --ink-muted:    #8c7b6e;
+  --warm-border:  #e5ddd4;
+  --warm-subtle:  #f0ead8;
+  --accent:       #c2714e;
+  --accent-hover: #a85f3f;
+  --accent-light: #f7ede6;
 }
 
-/* Reader content typography for injected EPUB HTML */
-.reader-content p { margin-bottom: 1em; }
-.reader-content h1 { font-size: 1.5em; font-weight: 700; margin: 1.5em 0 0.75em; }
-.reader-content h2 { font-size: 1.25em; font-weight: 600; margin: 1.25em 0 0.6em; }
-.reader-content h3 { font-size: 1.1em; font-weight: 600; margin: 1em 0 0.5em; }
-.reader-content a { color: #1d4ed8; text-decoration: underline; }
-.dark .reader-content a { color: #93c5fd; }
+.dark {
+  --paper:        #1a1614;
+  --surface:      #231f1b;
+  --ink:          #e8e2d9;
+  --ink-muted:    #9c8e83;
+  --warm-border:  #3a3028;
+  --warm-subtle:  #2a2420;
+  --accent:       #d4886a;
+  --accent-hover: #c27050;
+  --accent-light: #2e1f17;
+}
+
+@theme {
+  /* Fonts */
+  --font-sans:    "DM Sans", system-ui, -apple-system, sans-serif;
+  --font-serif:   "Playfair Display", Georgia, serif;
+  --font-reading: "Lora", Georgia, serif;
+
+  /* Semantic color tokens (CSS variable–backed for dark mode) */
+  --color-paper:       var(--paper);
+  --color-surface:     var(--surface);
+  --color-ink:         var(--ink);
+  --color-ink-muted:   var(--ink-muted);
+  --color-warm-border: var(--warm-border);
+  --color-warm-subtle: var(--warm-subtle);
+  --color-accent:      var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-light: var(--accent-light);
+
+  /* Animation */
+  --animate-slide-in-left:  slide-in-left  0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-slide-in-right: slide-in-right 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-fade-in:        fade-in 0.18s ease both;
+}
+
+@keyframes slide-in-left {
+  from { transform: translateX(-100%); opacity: 0; }
+  to   { transform: translateX(0);     opacity: 1; }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Global base ────────────────────────────────────────────── */
+
+html, body, #root {
+  height: 100%;
+  font-family: var(--font-sans);
+  background-color: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Reader content typography (injected EPUB HTML) ─────────── */
+
+.reader-content {
+  font-family: "Lora", Georgia, serif;
+  color: var(--ink);
+}
+
+.reader-content p {
+  margin-bottom: 1.1em;
+  text-align: justify;
+  hyphens: auto;
+}
+
+.reader-content h1 {
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 1.6em;
+  font-weight: 700;
+  margin: 1.6em 0 0.7em;
+  line-height: 1.25;
+}
+
+.reader-content h2 {
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 1.3em;
+  font-weight: 600;
+  margin: 1.4em 0 0.6em;
+  line-height: 1.3;
+}
+
+.reader-content h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin: 1.1em 0 0.5em;
+}
+
+.reader-content a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .reader-content blockquote {
-  border-left: 3px solid #d1d5db;
-  padding-left: 1em;
-  margin: 1.5em 0;
-  color: #4b5563;
+  border-left: 2px solid var(--warm-border);
+  padding-left: 1.25em;
+  margin: 1.75em 0;
+  color: var(--ink-muted);
   font-style: italic;
 }
-.dark .reader-content blockquote {
-  border-left-color: #4b5563;
-  color: #9ca3af;
+
+.reader-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
 }
-.reader-content img { max-width: 100%; height: auto; border-radius: 4px; }
+
 .reader-content pre,
 .reader-content code {
   font-family: "JetBrains Mono", "Courier New", monospace;
-  background: #f3f4f6;
+  background: var(--warm-subtle);
   padding: 0.2em 0.4em;
   border-radius: 4px;
-  font-size: 0.9em;
+  font-size: 0.875em;
 }
-.dark .reader-content pre,
-.dark .reader-content code { background: #1f2937; }
 
-/* Reduced motion */
+/* ── Reduced motion ─────────────────────────────────────────── */
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     transition-duration: 0.01ms !important;

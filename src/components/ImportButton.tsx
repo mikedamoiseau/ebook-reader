@@ -9,7 +9,7 @@ export default function ImportButton({ onClick, loading }: ImportButtonProps) {
       type="button"
       onClick={onClick}
       disabled={loading}
-      className="shrink-0 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:outline-2 focus:outline-blue-500 focus:outline-offset-2 active:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
+      className="shrink-0 px-4 py-2 bg-accent text-white text-sm font-medium rounded-xl hover:bg-accent-hover focus:outline-2 focus:outline-accent focus:outline-offset-2 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150 shadow-sm"
     >
       {loading ? (
         <span className="flex items-center gap-2">
@@ -37,7 +37,7 @@ export default function ImportButton({ onClick, loading }: ImportButtonProps) {
           Importing…
         </span>
       ) : (
-        "+ Import"
+        "+ Add book"
       )}
     </button>
   );
