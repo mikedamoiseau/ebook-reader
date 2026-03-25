@@ -29,15 +29,21 @@ pub async fn import_book(
 
     let book_id = Uuid::new_v4().to_string();
 
-    let cover_path = app
-        .path()
-        .app_data_dir()
-        .ok()
-        .and_then(|dir| {
-            let cover_dir = dir.join("covers").join(&book_id);
-            let dest = cover_dir.to_string_lossy().to_string();
-            epub::extract_cover(&file_path, &dest).ok().flatten()
-        });
+    // Track the cover directory so it can be cleaned up if the DB insert fails.
+    let mut cover_dir: Option<std::path::PathBuf> = None;
+    let cover_path = if let Some(data_dir) = app.path().app_data_dir().ok() {
+        let dir = data_dir.join("covers").join(&book_id);
+        let dest = dir.to_string_lossy().to_string();
+        match epub::extract_cover(&file_path, &dest) {
+            Ok(Some(path)) => {
+                cover_dir = Some(dir);
+                Some(path)
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
 
     let chapters = epub::get_chapter_list(&file_path).map_err(|e| e.to_string())?;
 
@@ -55,7 +61,13 @@ pub async fn import_book(
     };
 
     let conn = state.db.get().map_err(|e| e.to_string())?;
-    db::insert_book(&conn, &book).map_err(|e| e.to_string())?;
+    if let Err(e) = db::insert_book(&conn, &book) {
+        // DB insert failed — remove any extracted cover files to avoid orphaned disk usage.
+        if let Some(dir) = cover_dir {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+        return Err(e.to_string());
+    }
 
     Ok(book)
 }
