@@ -45,7 +45,7 @@ fn run_schema(conn: &Connection) -> Result<()> {
 
 pub fn create_pool(db_path: &Path) -> Result<DbPool, Box<dyn std::error::Error>> {
     if let Some(parent) = db_path.parent() {
-        std::fs::create_dir_all(parent).ok();
+        std::fs::create_dir_all(parent)?;
     }
 
     let manager = SqliteConnectionManager::file(db_path)
