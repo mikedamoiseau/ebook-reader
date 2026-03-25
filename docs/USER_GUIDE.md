@@ -39,6 +39,16 @@ Go to the [GitHub Releases page](https://github.com/mikedamoiseau/ebook-reader/r
 
 **macOS:** Open the `.dmg`, drag Ebook Reader into your Applications folder, then double-click to launch it.
 
+> **macOS Gatekeeper — "damaged" or "unidentified developer" warning**
+>
+> Because this app is not notarized, macOS 14 (Sonoma) and later may block it with a _"ebook-reader.app is damaged and can't be opened"_ message.
+>
+> **Fix:** open Terminal and run:
+> ```bash
+> xattr -cr /Applications/ebook-reader.app
+> ```
+> Then launch the app as normal. This removes the quarantine flag and only needs to be done once after each install or update.
+
 **Windows:** Run the `.msi` installer and follow the prompts.
 
 **Linux (AppImage):** Make the file executable (`chmod +x ebook-reader.AppImage`), then run it.
@@ -165,4 +175,12 @@ The app stores a path reference to each book, not a copy of the file itself. If 
 
 ### The app won't start
 
-Check that your OS meets the minimum version listed in [Getting Started](#1-getting-started). On macOS, a Gatekeeper security warning is normal for unsigned apps. Go to System Settings > Privacy & Security and click Open Anyway.
+Check that your OS meets the minimum version listed in [Getting Started](#1-getting-started).
+
+**macOS — "damaged and can't be opened" or "unidentified developer":** This is a Gatekeeper quarantine flag on unsigned apps. Run the following in Terminal, then try launching again:
+
+```bash
+xattr -cr /Applications/ebook-reader.app
+```
+
+Alternatively go to **System Settings > Privacy & Security** and click **Open Anyway** after the first blocked launch attempt.

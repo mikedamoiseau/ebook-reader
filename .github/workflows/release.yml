@@ -62,13 +62,13 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Ebook Reader ${{ github.ref_name }}'
           releaseBody: |
             See the assets below to download and install this version.
-          releaseDraft: true
+
+            > **macOS note:** Because this app is not notarized, macOS Gatekeeper may show a "damaged" or "unidentified developer" warning. See the [installation guide](https://github.com/mikedamoiseau/ebook-reader/blob/main/docs/USER_GUIDE.md#installing) for the one-line fix.
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

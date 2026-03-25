@@ -30,6 +30,22 @@ npm run tauri dev
 npm run tauri build
 ```
 
+## Installation
+
+Pre-built binaries are on the [GitHub Releases page](https://github.com/mikedamoiseau/ebook-reader/releases).
+
+### macOS — Gatekeeper "damaged" warning
+
+Because this app is not code-signed or notarized with an Apple Developer certificate, macOS 14+ may refuse to open it with a _"damaged and can't be opened"_ error.
+
+**One-time fix — run this in Terminal after installing:**
+
+```bash
+xattr -cr /Applications/ebook-reader.app
+```
+
+Then double-click the app as normal. You only need to do this once per install.
+
 ## CI Status
 ![CI](https://github.com/mikedamoiseau/ebook-reader/actions/workflows/ci.yml/badge.svg)
 
