@@ -1,47 +1,37 @@
 # Ebook Reader
 
-[![CI](https://github.com/mikedamoiseau/ebook-reader/actions/workflows/ci.yml/badge.svg)](https://github.com/mikedamoiseau/ebook-reader/actions/workflows/ci.yml)
+A cross-platform desktop ebook reader built with Tauri v2 (Rust) and React.
 
-A desktop ebook reader built with Tauri v2, React, TypeScript, Vite, and Tailwind CSS.
+## Features
+- Import EPUB 2 & 3 files via file picker or drag-and-drop
+- Library management with search and duplicate detection
+- Chapter navigation with Table of Contents sidebar
+- Reading progress auto-saved across sessions
+- Light / dark theme and adjustable font size
+- XSS-safe HTML rendering
 
-## Prerequisites
+## Tech Stack
+- **Backend:** Rust, Tauri v2, SQLite (rusqlite), ammonia
+- **Frontend:** React, TypeScript, Vite, Tailwind CSS
 
-- [Node.js](https://nodejs.org/) v18+
-- [Rust](https://www.rust-lang.org/tools/install) (stable)
-- Tauri prerequisites for your OS: https://tauri.app/start/prerequisites/
-
-## Setup
-
-```bash
-npm install
-```
+## Requirements
+- [Tauri prerequisites](https://tauri.app/start/prerequisites/)
+- Node.js 18+
+- Rust (stable)
 
 ## Development
-
 ```bash
+npm install
 npm run tauri dev
 ```
 
-This launches the desktop app with hot-reload for the frontend.
-
 ## Build
-
 ```bash
 npm run tauri build
 ```
 
-## Project Structure
+## CI Status
+![CI](https://github.com/mikedamoiseau/ebook-reader/actions/workflows/ci.yml/badge.svg)
 
-```
-src/                    # React frontend
-  screens/
-    Library.tsx         # Ebook library screen
-    Reader.tsx          # Ebook reader screen
-  App.tsx               # Root component with routing
-  main.tsx              # Entry point
-src-tauri/              # Tauri/Rust backend
-  src/
-    lib.rs              # Tauri commands
-  Cargo.toml
-  tauri.conf.json
-```
+## License
+MIT
