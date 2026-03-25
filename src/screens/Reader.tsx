@@ -50,9 +50,12 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
   const [tocOpen, setTocOpen] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
 
+  const [chapterError, setChapterError] = useState<string | null>(null);
+
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const restoringScroll = useRef(false);
+  const savedScrollPosition = useRef<number | null>(null);
 
   // ---- Load book info, TOC, and saved progress on mount ----
 
@@ -82,6 +85,7 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
           );
           if (!cancelled && progress) {
             setChapterIndex(progress.chapter_index);
+            savedScrollPosition.current = progress.scroll_position;
             restoringScroll.current = true;
           }
         } catch {
@@ -119,6 +123,7 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
         });
         if (!cancelled) {
           setChapterHtml(html);
+          setChapterError(null);
           // Scroll to top unless restoring a saved position
           if (!restoringScroll.current && scrollContainerRef.current) {
             scrollContainerRef.current.scrollTop = 0;
@@ -126,9 +131,7 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
         }
       } catch (err) {
         if (!cancelled) {
-          setChapterHtml(
-            `<p style="color: #ef4444;">Failed to load chapter: ${String(err)}</p>`
-          );
+          setChapterError(String(err));
         }
       }
     }
@@ -144,26 +147,18 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
   useEffect(() => {
     if (!restoringScroll.current || !chapterHtml || !bookId) return;
 
-    async function restoreScroll() {
-      try {
-        const progress = await invoke<ReadingProgress | null>(
-          "get_reading_progress",
-          { bookId }
-        );
-        if (progress && scrollContainerRef.current) {
-          const container = scrollContainerRef.current;
-          requestAnimationFrame(() => {
-            container.scrollTop =
-              progress.scroll_position * container.scrollHeight;
-            restoringScroll.current = false;
-          });
-        }
-      } catch {
+    const scrollPos = savedScrollPosition.current;
+    if (scrollPos !== null && scrollContainerRef.current) {
+      const container = scrollContainerRef.current;
+      requestAnimationFrame(() => {
+        container.scrollTop = scrollPos * container.scrollHeight;
         restoringScroll.current = false;
-      }
+        savedScrollPosition.current = null;
+      });
+    } else {
+      restoringScroll.current = false;
+      savedScrollPosition.current = null;
     }
-
-    restoreScroll();
   }, [chapterHtml, bookId]);
 
   // ---- Save reading progress ----
@@ -425,16 +420,22 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
           ref={scrollContainerRef}
           className="flex-1 overflow-y-auto scroll-smooth"
         >
-          <div
-            ref={contentRef}
-            className="reader-content max-w-[680px] mx-auto px-6 py-8"
-            style={{
-              fontSize: `${fontSize}px`,
-              lineHeight: 1.7,
-              fontFamily: fontFamilyCss,
-            }}
-            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(chapterHtml) }}
-          />
+          {chapterError ? (
+            <div className="max-w-[680px] mx-auto px-6 py-8">
+              <p className="text-red-500">Failed to load chapter: {chapterError}</p>
+            </div>
+          ) : (
+            <div
+              ref={contentRef}
+              className="reader-content max-w-[680px] mx-auto px-6 py-8"
+              style={{
+                fontSize: `${fontSize}px`,
+                lineHeight: 1.7,
+                fontFamily: fontFamilyCss,
+              }}
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(chapterHtml) }}
+            />
+          )}
 
           {/* Chapter navigation at bottom of content */}
           <div className="max-w-[680px] mx-auto px-6 pb-8 flex items-center justify-between">
