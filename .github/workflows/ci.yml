@@ -82,6 +82,9 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Ensure resources dir exists
+        run: mkdir -p src-tauri/resources
+
       - name: cargo clippy
         working-directory: src-tauri
         run: cargo clippy -- -D warnings

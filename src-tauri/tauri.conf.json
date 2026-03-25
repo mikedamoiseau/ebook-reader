@@ -36,9 +36,7 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "resources/libpdfium.dylib",
-      "resources/libpdfium.so",
-      "resources/pdfium.dll"
+      "resources/*"
     ]
   }
 }
