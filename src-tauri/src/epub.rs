@@ -427,6 +427,9 @@ pub fn get_chapter_list(file_path: &str) -> Result<Vec<ChapterInfo>, EpubError> 
 }
 
 /// Get HTML content of a specific chapter by index.
+/// Relative `<img src>` attributes are rewritten to base64 data URIs so that
+/// inline illustrations render correctly when the HTML is displayed without a
+/// base URL pointing into the EPUB archive.
 pub fn get_chapter_content(file_path: &str, chapter_index: usize) -> Result<String, EpubError> {
     let file = std::fs::File::open(file_path).map_err(EpubError::Io)?;
     let mut archive = ZipArchive::new(file)?;
@@ -451,7 +454,161 @@ pub fn get_chapter_content(file_path: &str, chapter_index: usize) -> Result<Stri
         .ok_or_else(|| EpubError::MissingFile(format!("{base_dir}{href}")))?;
 
     let raw_html = read_zip_entry(&mut archive, &entry_name)?;
-    Ok(clean(&raw_html))
+    // Sanitize first so ammonia never sees the data URIs we are about to inject.
+    let cleaned = clean(&raw_html);
+
+    // Compute the directory of the chapter file within the zip so relative
+    // image paths (e.g. "../images/foo.png") can be resolved.
+    let chapter_dir = {
+        let full_path = format!("{base_dir}{href}");
+        match full_path.rfind('/') {
+            Some(pos) => full_path[..pos + 1].to_string(),
+            None => String::new(),
+        }
+    };
+
+    Ok(rewrite_img_srcs_to_data_uris(&cleaned, &mut archive, &chapter_dir))
+}
+
+// ---- Inline-image helpers ----
+
+/// MIME type from a lowercase file extension.
+fn mime_from_ext(ext: &str) -> &'static str {
+    match ext {
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        _ => "image/jpeg",
+    }
+}
+
+/// Resolve a relative path against a zip-internal base directory.
+/// e.g. base="OEBPS/Text/", relative="../images/foo.png" → "OEBPS/images/foo.png"
+fn resolve_zip_path(base_dir: &str, relative: &str) -> String {
+    let mut parts: Vec<&str> = base_dir
+        .trim_end_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
+    for segment in relative.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => { parts.pop(); }
+            other => parts.push(other),
+        }
+    }
+    parts.join("/")
+}
+
+/// Extract the value of a quoted HTML attribute from a tag string.
+/// Handles both double- and single-quoted values.
+fn extract_attr_value(tag: &str, attr: &str) -> Option<String> {
+    let dq = format!("{attr}=\"");
+    let sq = format!("{attr}='");
+    if let Some(pos) = tag.find(&dq) {
+        let after = &tag[pos + dq.len()..];
+        let end = after.find('"')?;
+        Some(after[..end].to_string())
+    } else if let Some(pos) = tag.find(&sq) {
+        let after = &tag[pos + sq.len()..];
+        let end = after.find('\'')?;
+        Some(after[..end].to_string())
+    } else {
+        None
+    }
+}
+
+/// Replace a specific attribute value within a tag string.
+fn replace_attr_value(tag: &str, attr: &str, old_val: &str, new_val: &str) -> String {
+    let dq_old = format!("{attr}=\"{old_val}\"");
+    let dq_new = format!("{attr}=\"{new_val}\"");
+    if tag.contains(&dq_old) {
+        return tag.replacen(&dq_old, &dq_new, 1);
+    }
+    let sq_old = format!("{attr}='{old_val}'");
+    let sq_new = format!("{attr}='{new_val}'");
+    tag.replacen(&sq_old, &sq_new, 1)
+}
+
+/// Walk the sanitized chapter HTML and replace relative `<img src>` values
+/// with `data:<mime>;base64,<...>` URIs extracted directly from the EPUB zip.
+/// External URLs and SVG images are left untouched.
+/// Missing images fail silently (the tag is left as-is) so a single broken
+/// asset doesn't abort the whole chapter.
+fn rewrite_img_srcs_to_data_uris(
+    html: &str,
+    archive: &mut ZipArchive<std::fs::File>,
+    chapter_dir: &str,
+) -> String {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+
+    let mut result = String::with_capacity(html.len());
+    let mut rest = html;
+
+    while let Some(tag_start) = rest.find("<img") {
+        // Confirm the match is really an <img tag (not e.g. <imgfoo).
+        let after_tag = &rest[tag_start + 4..];
+        match after_tag.bytes().next() {
+            Some(b) if b == b' ' || b == b'\t' || b == b'\n' || b == b'\r'
+                     || b == b'>' || b == b'/' => {}
+            _ => {
+                // Not an img tag — advance past the false match.
+                result.push_str(&rest[..tag_start + 1]);
+                rest = &rest[tag_start + 1..];
+                continue;
+            }
+        }
+
+        result.push_str(&rest[..tag_start]);
+        let from_tag = &rest[tag_start..];
+
+        let tag_end = from_tag.find('>').map(|i| i + 1).unwrap_or(from_tag.len());
+        let tag = &from_tag[..tag_end];
+
+        let rewritten = match extract_attr_value(tag, "src") {
+            None => tag.to_string(),
+            Some(src) => {
+                // Leave external or already-resolved URLs alone.
+                let is_external = src.starts_with("http://")
+                    || src.starts_with("https://")
+                    || src.starts_with("data:")
+                    || src.starts_with("//")
+                    || src.starts_with("asset://")
+                    || src.starts_with('/');
+                if is_external {
+                    tag.to_string()
+                } else {
+                    // Strip fragment / query before resolving.
+                    let clean_src = src
+                        .split('#').next().unwrap_or(&src)
+                        .split('?').next().unwrap_or(&src);
+                    let ext = clean_src.rsplit('.').next().unwrap_or("").to_lowercase();
+
+                    // DOMPurify strips SVG data URIs by default — skip them.
+                    if ext == "svg" {
+                        tag.to_string()
+                    } else {
+                        let resolved = resolve_zip_path(chapter_dir, clean_src);
+                        match read_zip_entry_bytes(archive, &resolved) {
+                            Ok(bytes) => {
+                                let mime = mime_from_ext(&ext);
+                                let b64 = STANDARD.encode(&bytes);
+                                let data_uri = format!("data:{mime};base64,{b64}");
+                                replace_attr_value(tag, "src", &src, &data_uri)
+                            }
+                            Err(_) => tag.to_string(),
+                        }
+                    }
+                }
+            }
+        };
+
+        result.push_str(&rewritten);
+        rest = &from_tag[tag_end..];
+    }
+
+    result.push_str(rest);
+    result
 }
 
 /// Get table of contents from NCX (EPUB 2) or nav document (EPUB 3).
