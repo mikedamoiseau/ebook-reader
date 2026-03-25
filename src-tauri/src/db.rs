@@ -1,17 +1,13 @@
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Connection, Result, params};
 use std::path::Path;
 
 use crate::models::{Book, Bookmark, ReadingProgress};
 
-pub fn init_db(db_path: &Path) -> Result<Connection> {
-    if let Some(parent) = db_path.parent() {
-        std::fs::create_dir_all(parent).ok();
-    }
+pub type DbPool = Pool<SqliteConnectionManager>;
 
-    let conn = Connection::open(db_path)?;
-
-    conn.execute_batch("PRAGMA foreign_keys = ON;")?;
-
+fn run_schema(conn: &Connection) -> Result<()> {
     conn.execute_batch("
         CREATE TABLE IF NOT EXISTS books (
             id TEXT PRIMARY KEY,
@@ -44,8 +40,35 @@ pub fn init_db(db_path: &Path) -> Result<Connection> {
             created_at INTEGER NOT NULL,
             FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
         );
-    ")?;
+    ")
+}
 
+pub fn create_pool(db_path: &Path) -> Result<DbPool, Box<dyn std::error::Error>> {
+    if let Some(parent) = db_path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+
+    let manager = SqliteConnectionManager::file(db_path)
+        .with_init(|conn| conn.execute_batch("PRAGMA foreign_keys = ON;"));
+
+    let pool = Pool::new(manager)?;
+
+    // Run schema migrations on startup using a pool connection.
+    let conn = pool.get()?;
+    run_schema(&conn)?;
+
+    Ok(pool)
+}
+
+/// Opens a single connection used only by tests.
+#[cfg(test)]
+pub fn init_db(db_path: &Path) -> Result<Connection> {
+    if let Some(parent) = db_path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    let conn = Connection::open(db_path)?;
+    conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+    run_schema(&conn)?;
     Ok(conn)
 }
 

@@ -4,7 +4,6 @@ pub mod epub;
 pub mod models;
 
 use commands::AppState;
-use std::sync::Mutex;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -14,8 +13,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let db_path = app.path().app_data_dir()?.join("library.db");
-            let conn = db::init_db(&db_path).expect("Failed to initialize database");
-            app.manage(AppState { db: Mutex::new(conn) });
+            let pool = db::create_pool(&db_path).expect("Failed to initialize database");
+            app.manage(AppState { db: pool });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
