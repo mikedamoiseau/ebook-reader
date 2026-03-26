@@ -715,7 +715,7 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
             {/* Book title */}
             {bookTitle && (
               <div className="px-5 py-3 border-b border-warm-border">
-                <p className="font-serif text-sm font-medium text-ink leading-snug truncate">{bookTitle}</p>
+                <p className="font-serif text-sm font-medium text-ink leading-snug truncate" title={bookTitle}>{bookTitle}</p>
               </div>
             )}
 

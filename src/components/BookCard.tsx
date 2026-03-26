@@ -165,8 +165,12 @@ export default function BookCard({
         {/* Inline delete confirmation */}
         {confirming && (
           <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="Confirm deletion"
             className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-ink/80 px-4 backdrop-blur-sm"
             onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setConfirming(false); } }}
           >
             <p className="text-white text-xs text-center line-clamp-2 font-medium leading-snug">
               Delete &ldquo;{title}&rdquo;?
@@ -193,10 +197,10 @@ export default function BookCard({
 
       {/* Info area */}
       <div className="px-3 py-2.5">
-        <p className="text-sm font-medium text-ink truncate leading-snug">
+        <p className="text-sm font-medium text-ink truncate leading-snug" title={title}>
           {title}
         </p>
-        <p className="text-xs text-ink-muted truncate mt-0.5">
+        <p className="text-xs text-ink-muted truncate mt-0.5" title={author}>
           {author}
         </p>
         {progress != null && progress > 0 && (

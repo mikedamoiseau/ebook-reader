@@ -397,6 +397,13 @@ export default function Library() {
     try { await invoke("cancel_scan"); } catch {}
   }, []);
 
+  // After a deletion, if a search is active but yields no results, clear it
+  useEffect(() => {
+    if (search && filtered.length === 0 && books.length > 0) {
+      setSearch("");
+    }
+  }, [filtered.length, books.length, search]);
+
   const hasBooks = books.length > 0;
   const hasResults = filtered.length > 0;
 
@@ -455,7 +462,7 @@ export default function Library() {
               placeholder="Search by title or author…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full h-9 pl-9 pr-3 bg-warm-subtle rounded-lg text-sm text-ink placeholder-ink-muted border border-transparent focus:border-accent/40 focus:outline-none focus:bg-surface transition-colors duration-150"
+              className="w-full h-9 pl-9 pr-3 bg-warm-subtle rounded-lg text-sm text-ink placeholder-ink-muted border border-transparent focus:border-accent focus:outline-none focus:bg-surface transition-colors duration-150"
             />
           </div>
           {/* Filter: format */}
