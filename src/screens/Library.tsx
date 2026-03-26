@@ -733,7 +733,6 @@ export default function Library() {
         onClose={() => setCollectionsOpen(false)}
         onSelect={(id) => {
           setActiveCollectionId(id);
-          setCollectionsOpen(false);
         }}
         onCreate={async (data: CreateCollectionData) => {
           try {
