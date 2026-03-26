@@ -220,6 +220,11 @@ pub async fn import_book(
                 e.to_string()
             })?;
 
+            let language = if metadata.language.is_empty() {
+                None
+            } else {
+                Some(metadata.language.clone())
+            };
             Book {
                 id: book_id,
                 title: metadata.title,
@@ -243,6 +248,11 @@ pub async fn import_book(
                 isbn: metadata.isbn,
                 openlibrary_key: None,
                 enrichment_status: None,
+                series: None,
+                volume: None,
+                language,
+                publisher: None,
+                publish_year: None,
             }
         }
         BookFormat::Cbz => {
@@ -286,6 +296,11 @@ pub async fn import_book(
                 isbn: None,
                 openlibrary_key: None,
                 enrichment_status: None,
+                series: meta.series,
+                volume: meta.volume,
+                language: meta.language,
+                publisher: meta.publisher,
+                publish_year: meta.year,
             }
         }
         BookFormat::Cbr => {
@@ -329,6 +344,11 @@ pub async fn import_book(
                 isbn: None,
                 openlibrary_key: None,
                 enrichment_status: None,
+                series: None,
+                volume: None,
+                language: None,
+                publisher: None,
+                publish_year: None,
             }
         }
         BookFormat::Pdf => {
@@ -383,6 +403,11 @@ pub async fn import_book(
                 isbn: None,
                 openlibrary_key: None,
                 enrichment_status: None,
+                series: None,
+                volume: None,
+                language: None,
+                publisher: None,
+                publish_year: None,
             }
         }
     };
@@ -502,11 +527,17 @@ pub async fn scan_folder_for_books(folder_path: String) -> Result<Vec<String>, S
 // --- Metadata Editing ---
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn update_book_metadata(
     book_id: String,
     title: Option<String>,
     author: Option<String>,
     cover_image_path: Option<String>,
+    series: Option<String>,
+    volume: Option<u32>,
+    language: Option<String>,
+    publisher: Option<String>,
+    publish_year: Option<u16>,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Book, String> {
@@ -520,6 +551,21 @@ pub async fn update_book_metadata(
     }
     if let Some(a) = author {
         book.author = a;
+    }
+    if let Some(s) = series {
+        book.series = Some(s);
+    }
+    if let Some(v) = volume {
+        book.volume = Some(v);
+    }
+    if let Some(l) = language {
+        book.language = Some(l);
+    }
+    if let Some(p) = publisher {
+        book.publisher = Some(p);
+    }
+    if let Some(y) = publish_year {
+        book.publish_year = Some(y);
     }
     if let Some(image_path) = cover_image_path {
         // Copy new cover image into the covers directory

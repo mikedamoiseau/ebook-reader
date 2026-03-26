@@ -123,6 +123,13 @@ fn run_schema(conn: &Connection) -> Result<()> {
 
     let _ = conn.execute_batch("ALTER TABLE books ADD COLUMN enrichment_status TEXT;");
 
+    // Series / volume / language / publisher / publish_year columns
+    let _ = conn.execute_batch("ALTER TABLE books ADD COLUMN series TEXT;");
+    let _ = conn.execute_batch("ALTER TABLE books ADD COLUMN volume INTEGER;");
+    let _ = conn.execute_batch("ALTER TABLE books ADD COLUMN language TEXT;");
+    let _ = conn.execute_batch("ALTER TABLE books ADD COLUMN publisher TEXT;");
+    let _ = conn.execute_batch("ALTER TABLE books ADD COLUMN publish_year INTEGER;");
+
     // Incremental backup: ensure updated_at columns exist
     let _ =
         conn.execute_batch("ALTER TABLE books ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;");
@@ -180,8 +187,8 @@ pub fn init_db(db_path: &Path) -> Result<Connection> {
 
 pub fn insert_book(conn: &Connection, book: &Book) -> Result<()> {
     conn.execute(
-        "INSERT INTO books (id, title, author, file_path, cover_path, total_chapters, added_at, format, file_hash, description, genres, rating, isbn, openlibrary_key, updated_at, enrichment_status)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+        "INSERT INTO books (id, title, author, file_path, cover_path, total_chapters, added_at, format, file_hash, description, genres, rating, isbn, openlibrary_key, updated_at, enrichment_status, series, volume, language, publisher, publish_year)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
         params![
             book.id,
             book.title,
@@ -199,6 +206,11 @@ pub fn insert_book(conn: &Connection, book: &Book) -> Result<()> {
             book.openlibrary_key,
             book.added_at,
             book.enrichment_status,
+            book.series,
+            book.volume,
+            book.language,
+            book.publisher,
+            book.publish_year,
         ],
     )?;
     Ok(())
@@ -254,7 +266,7 @@ pub fn update_book(conn: &Connection, book: &Book) -> Result<()> {
         "UPDATE books SET title=?2, author=?3, file_path=?4, cover_path=?5,
          total_chapters=?6, added_at=?7, format=?8,
          description=?9, genres=?10, rating=?11, isbn=?12, openlibrary_key=?13,
-         updated_at=?14
+         updated_at=?14, series=?15, volume=?16, language=?17, publisher=?18, publish_year=?19
          WHERE id=?1",
         params![
             book.id,
@@ -271,6 +283,11 @@ pub fn update_book(conn: &Connection, book: &Book) -> Result<()> {
             book.isbn,
             book.openlibrary_key,
             now,
+            book.series,
+            book.volume,
+            book.language,
+            book.publisher,
+            book.publish_year,
         ],
     )?;
     Ok(())
@@ -445,10 +462,10 @@ pub fn delete_bookmark(conn: &Connection, id: &str) -> Result<()> {
 // --- Collections CRUD ---
 
 /// Standard column list for SELECT queries on books.
-const BOOK_COLUMNS: &str = "id, title, author, file_path, cover_path, total_chapters, added_at, format, file_hash, description, genres, rating, isbn, openlibrary_key, enrichment_status";
+const BOOK_COLUMNS: &str = "id, title, author, file_path, cover_path, total_chapters, added_at, format, file_hash, description, genres, rating, isbn, openlibrary_key, enrichment_status, series, volume, language, publisher, publish_year";
 
 /// Standard column list prefixed with table alias `b.`.
-const BOOK_COLUMNS_B: &str = "b.id, b.title, b.author, b.file_path, b.cover_path, b.total_chapters, b.added_at, b.format, b.file_hash, b.description, b.genres, b.rating, b.isbn, b.openlibrary_key, b.enrichment_status";
+const BOOK_COLUMNS_B: &str = "b.id, b.title, b.author, b.file_path, b.cover_path, b.total_chapters, b.added_at, b.format, b.file_hash, b.description, b.genres, b.rating, b.isbn, b.openlibrary_key, b.enrichment_status, b.series, b.volume, b.language, b.publisher, b.publish_year";
 
 fn row_to_book(row: &rusqlite::Row) -> rusqlite::Result<Book> {
     let format_str: String = row.get(7)?;
@@ -470,6 +487,11 @@ fn row_to_book(row: &rusqlite::Row) -> rusqlite::Result<Book> {
         isbn: row.get(12)?,
         openlibrary_key: row.get(13)?,
         enrichment_status: row.get(14)?,
+        series: row.get(15)?,
+        volume: row.get(16)?,
+        language: row.get(17)?,
+        publisher: row.get(18)?,
+        publish_year: row.get(19)?,
     })
 }
 
@@ -958,6 +980,11 @@ mod tests {
             isbn: None,
             openlibrary_key: None,
             enrichment_status: None,
+            series: None,
+            volume: None,
+            language: None,
+            publisher: None,
+            publish_year: None,
         }
     }
 

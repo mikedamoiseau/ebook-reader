@@ -51,6 +51,11 @@ pub struct Book {
     pub isbn: Option<String>,
     pub openlibrary_key: Option<String>,
     pub enrichment_status: Option<String>,
+    pub series: Option<String>,
+    pub volume: Option<u32>,
+    pub language: Option<String>,
+    pub publisher: Option<String>,
+    pub publish_year: Option<u16>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

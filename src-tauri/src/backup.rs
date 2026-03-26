@@ -419,7 +419,7 @@ pub fn run_incremental_backup(
     let books: Vec<crate::models::Book> = {
         let mut stmt = conn
             .prepare(
-                "SELECT id, title, author, file_path, cover_path, total_chapters, added_at, format, file_hash, description, genres, rating, isbn, openlibrary_key FROM books WHERE updated_at > ?1",
+                "SELECT id, title, author, file_path, cover_path, total_chapters, added_at, format, file_hash, description, genres, rating, isbn, openlibrary_key, enrichment_status, series, volume, language, publisher, publish_year FROM books WHERE updated_at > ?1",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
@@ -442,7 +442,12 @@ pub fn run_incremental_backup(
                     rating: row.get(11)?,
                     isbn: row.get(12)?,
                     openlibrary_key: row.get(13)?,
-                    enrichment_status: None,
+                    enrichment_status: row.get(14)?,
+                    series: row.get(15)?,
+                    volume: row.get(16)?,
+                    language: row.get(17)?,
+                    publisher: row.get(18)?,
+                    publish_year: row.get(19)?,
                 })
             })
             .map_err(|e| e.to_string())?;
