@@ -119,6 +119,79 @@ pub fn extract_isbn(identifier: &str) -> Option<String> {
     }
 }
 
+use crate::openlibrary::{self, OpenLibraryResult};
+
+#[derive(Debug, Clone)]
+pub struct EnrichmentResult {
+    pub data: OpenLibraryResult,
+    pub confidence: f64,
+    pub auto_apply: bool,
+}
+
+pub fn title_similarity(a: &str, b: &str) -> f64 {
+    let words_a: std::collections::HashSet<String> = a
+        .to_lowercase()
+        .split_whitespace()
+        .filter(|w| !matches!(*w, "the" | "a" | "an" | "of" | "and"))
+        .map(|s| s.to_string())
+        .collect();
+    let words_b: std::collections::HashSet<String> = b
+        .to_lowercase()
+        .split_whitespace()
+        .filter(|w| !matches!(*w, "the" | "a" | "an" | "of" | "and"))
+        .map(|s| s.to_string())
+        .collect();
+    if words_a.is_empty() && words_b.is_empty() {
+        return 0.0;
+    }
+    let intersection = words_a.intersection(&words_b).count() as f64;
+    let union = words_a.union(&words_b).count() as f64;
+    if union == 0.0 {
+        0.0
+    } else {
+        intersection / union
+    }
+}
+
+pub fn enrich_book(title: &str, author: &str, isbn: Option<&str>) -> Option<EnrichmentResult> {
+    // Tier 1: ISBN lookup
+    if let Some(isbn) = isbn {
+        if let Ok(result) = openlibrary::lookup_isbn(isbn) {
+            if !result.title.is_empty() {
+                return Some(EnrichmentResult {
+                    data: result,
+                    confidence: 0.95,
+                    auto_apply: true,
+                });
+            }
+        }
+    }
+    // Tier 2: Title + Author search
+    let author_opt = if author.is_empty() || author == "Unknown Author" {
+        None
+    } else {
+        Some(author)
+    };
+    let results = openlibrary::search(title, author_opt).ok()?;
+    let first = results.into_iter().next()?;
+    let sim = title_similarity(title, &first.title);
+    if sim >= 0.85 {
+        Some(EnrichmentResult {
+            data: first,
+            confidence: sim,
+            auto_apply: true,
+        })
+    } else if sim >= 0.5 {
+        Some(EnrichmentResult {
+            data: first,
+            confidence: sim,
+            auto_apply: false,
+        })
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,5 +290,26 @@ mod tests {
     fn extract_isbn_invalid() {
         assert_eq!(extract_isbn("not-an-isbn"), None);
         assert_eq!(extract_isbn("12345"), None);
+    }
+
+    #[test]
+    fn title_similarity_exact_match() {
+        assert!((title_similarity("Dune", "Dune") - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn title_similarity_with_articles() {
+        assert!((title_similarity("The Lord of the Rings", "Lord of Rings") - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn title_similarity_different() {
+        assert!(title_similarity("Dune", "Foundation") < 0.1);
+    }
+
+    #[test]
+    fn title_similarity_partial() {
+        let sim = title_similarity("Dune Messiah", "Dune");
+        assert!(sim > 0.3 && sim < 0.8);
     }
 }
