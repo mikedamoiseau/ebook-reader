@@ -168,8 +168,8 @@ export default function BookCard({
             className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-ink/80 px-4 backdrop-blur-sm"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="text-paper text-xs font-medium text-center leading-snug">
-              Remove this book?
+            <p className="text-white text-xs text-center line-clamp-2 font-medium leading-snug">
+              Delete &ldquo;{title}&rdquo;?
             </p>
             <div className="flex gap-2">
               <button
