@@ -110,3 +110,23 @@ export function isSupportedFile(filename: string): boolean {
   const lower = filename.toLowerCase();
   return SUPPORTED_EXTENSIONS.some((ext) => lower.endsWith(ext));
 }
+
+export interface MetadataPill {
+  label: string;
+}
+
+export function formatMetadataPills(meta: {
+  language?: string | null;
+  publishYear?: number | null;
+  series?: string | null;
+  volume?: number | null;
+}): MetadataPill[] {
+  const pills: MetadataPill[] = [];
+  if (meta.language) pills.push({ label: meta.language });
+  if (meta.publishYear != null) pills.push({ label: String(meta.publishYear) });
+  if (meta.series) {
+    const seriesLabel = meta.volume != null ? `${meta.series} #${meta.volume}` : meta.series;
+    pills.push({ label: seriesLabel });
+  }
+  return pills;
+}

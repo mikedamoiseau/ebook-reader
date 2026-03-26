@@ -6,6 +6,7 @@ import {
   groupBy,
   clamp,
   isSupportedFile,
+  formatMetadataPills,
   type BookLike,
 } from "./utils";
 
@@ -216,5 +217,58 @@ describe("isSupportedFile", () => {
     expect(isSupportedFile("image.png")).toBe(false);
     expect(isSupportedFile("book.mobi")).toBe(false);
     expect(isSupportedFile("")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// formatMetadataPills
+// ---------------------------------------------------------------------------
+describe("formatMetadataPills", () => {
+  it("returns empty array when all fields are null", () => {
+    expect(formatMetadataPills({})).toEqual([]);
+  });
+
+  it("includes language pill when language is set", () => {
+    const pills = formatMetadataPills({ language: "fr" });
+    expect(pills).toEqual([{ label: "fr" }]);
+  });
+
+  it("includes year pill when publishYear is set", () => {
+    const pills = formatMetadataPills({ publishYear: 2024 });
+    expect(pills).toEqual([{ label: "2024" }]);
+  });
+
+  it("formats series with volume", () => {
+    const pills = formatMetadataPills({ series: "Aria", volume: 30 });
+    expect(pills).toEqual([{ label: "Aria #30" }]);
+  });
+
+  it("formats series without volume", () => {
+    const pills = formatMetadataPills({ series: "Aria" });
+    expect(pills).toEqual([{ label: "Aria" }]);
+  });
+
+  it("returns all pills in order: language, year, series", () => {
+    const pills = formatMetadataPills({
+      language: "en",
+      publishYear: 2023,
+      series: "Dune",
+      volume: 1,
+    });
+    expect(pills).toEqual([
+      { label: "en" },
+      { label: "2023" },
+      { label: "Dune #1" },
+    ]);
+  });
+
+  it("skips null and undefined fields", () => {
+    const pills = formatMetadataPills({
+      language: null,
+      publishYear: undefined,
+      series: "Saga",
+      volume: null,
+    });
+    expect(pills).toEqual([{ label: "Saga" }]);
   });
 });

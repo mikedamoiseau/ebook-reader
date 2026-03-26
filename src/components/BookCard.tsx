@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { formatMetadataPills } from "../lib/utils";
 
 interface BookCardProps {
   id: string;
@@ -9,9 +10,14 @@ interface BookCardProps {
   totalChapters: number;
   format?: "epub" | "cbz" | "cbr" | "pdf";
   progress?: number; // 0-100
+  language?: string | null;
+  publishYear?: number | null;
+  series?: string | null;
+  volume?: number | null;
   onClick: () => void;
   onDelete?: (id: string) => void;
   onEdit?: (id: string) => void;
+  onInfo?: (id: string) => void;
   onRemoveFromCollection?: () => void;
   onScanForMetadata?: (id: string) => void;
   isScanning?: boolean;
@@ -24,15 +30,21 @@ export default function BookCard({
   coverPath,
   format,
   progress,
+  language,
+  publishYear,
+  series,
+  volume,
   onClick,
   onDelete,
   onEdit,
+  onInfo,
   onRemoveFromCollection,
   onScanForMetadata,
   isScanning,
 }: BookCardProps) {
   const coverSrc = coverPath ? convertFileSrc(coverPath) : null;
   const [confirming, setConfirming] = useState(false);
+  const pills = formatMetadataPills({ language, publishYear, series, volume });
 
   const handleDeleteClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -150,6 +162,19 @@ export default function BookCard({
                 )}
               </button>
             )}
+            {onInfo && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onInfo(id); }}
+                aria-label={`Details for ${title}`}
+                className="w-6 h-6 flex items-center justify-center rounded-full bg-ink/60 text-paper hover:bg-accent focus:opacity-100 focus:outline-none"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" />
+                  <path d="M12 16v-4m0-4h.01" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                </svg>
+              </button>
+            )}
           </div>
         )}
 
@@ -210,6 +235,18 @@ export default function BookCard({
         <p className="text-xs text-ink-muted truncate mt-0.5" title={author}>
           {author}
         </p>
+        {pills.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {pills.map((pill) => (
+              <span
+                key={pill.label}
+                className="text-[10px] leading-tight bg-warm-subtle text-ink-muted px-1.5 py-0.5 rounded-full"
+              >
+                {pill.label}
+              </span>
+            ))}
+          </div>
+        )}
         {progress != null && progress > 0 && (
           <div className="mt-2 h-0.5 rounded-full bg-warm-subtle">
             <div
