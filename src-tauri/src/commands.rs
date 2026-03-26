@@ -44,7 +44,6 @@ impl AppState {
 
 // --- Activity logging ---
 
-#[allow(dead_code)]
 fn log_activity(
     conn: &rusqlite::Connection,
     action: &str,
@@ -462,6 +461,15 @@ pub async fn import_book(
         return Err(e.to_string());
     }
 
+    log_activity(
+        &conn,
+        "book_imported",
+        "book",
+        Some(&book.id),
+        Some(&book.title),
+        Some(&format!("{} by {}", book.format, book.author)),
+    );
+
     Ok(book)
 }
 
@@ -475,10 +483,18 @@ pub async fn get_library(state: State<'_, AppState>) -> Result<Vec<Book>, String
 pub async fn remove_book(book_id: String, state: State<'_, AppState>) -> Result<(), String> {
     let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
 
-    // Fetch file path before deleting so we can remove the library file.
-    let file_path = db::get_book(&conn, &book_id)
-        .map_err(|e| e.to_string())?
-        .map(|b| b.file_path);
+    // Fetch book before deleting so we can remove the library file and log.
+    let existing_book = db::get_book(&conn, &book_id).map_err(|e| e.to_string())?;
+    let file_path = existing_book.as_ref().map(|b| b.file_path.clone());
+
+    log_activity(
+        &conn,
+        "book_deleted",
+        "book",
+        Some(&book_id),
+        existing_book.as_ref().map(|b| b.title.as_str()),
+        None,
+    );
 
     db::delete_book(&conn, &book_id).map_err(|e| e.to_string())?;
 
@@ -574,6 +590,15 @@ pub async fn update_book_metadata(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Book '{book_id}' not found"))?;
 
+    let has_title = title.is_some();
+    let has_author = author.is_some();
+    let has_series = series.is_some();
+    let has_volume = volume.is_some();
+    let has_language = language.is_some();
+    let has_publisher = publisher.is_some();
+    let has_publish_year = publish_year.is_some();
+    let has_cover = cover_image_path.is_some();
+
     if let Some(t) = title {
         book.title = t;
     }
@@ -612,6 +637,44 @@ pub async fn update_book_metadata(
     }
 
     db::update_book(&conn, &book).map_err(|e| e.to_string())?;
+
+    let mut changes = Vec::new();
+    if has_title {
+        changes.push("title");
+    }
+    if has_author {
+        changes.push("author");
+    }
+    if has_series {
+        changes.push("series");
+    }
+    if has_volume {
+        changes.push("volume");
+    }
+    if has_language {
+        changes.push("language");
+    }
+    if has_publisher {
+        changes.push("publisher");
+    }
+    if has_publish_year {
+        changes.push("year");
+    }
+    if has_cover {
+        changes.push("cover");
+    }
+    if !changes.is_empty() {
+        let detail = format!("Changed: {}", changes.join(", "));
+        log_activity(
+            &conn,
+            "book_updated",
+            "book",
+            Some(&book_id),
+            Some(&book.title),
+            Some(&detail),
+        );
+    }
+
     Ok(book)
 }
 
@@ -1083,6 +1146,15 @@ pub async fn create_collection(
     let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
     db::insert_collection(&conn, &collection).map_err(|e| e.to_string())?;
 
+    log_activity(
+        &conn,
+        "collection_created",
+        "collection",
+        Some(&collection.id),
+        Some(&collection.name),
+        None,
+    );
+
     Ok(collection)
 }
 
@@ -1095,6 +1167,14 @@ pub async fn get_collections(state: State<'_, AppState>) -> Result<Vec<Collectio
 #[tauri::command]
 pub async fn delete_collection(id: String, state: State<'_, AppState>) -> Result<(), String> {
     let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
+    log_activity(
+        &conn,
+        "collection_deleted",
+        "collection",
+        Some(&id),
+        None,
+        None,
+    );
     db::delete_collection(&conn, &id).map_err(|e| e.to_string())
 }
 
@@ -1115,7 +1195,16 @@ pub async fn add_book_to_collection(
     if coll_type == "automated" {
         return Err("Cannot manually add books to an automated collection".to_string());
     }
-    db::add_book_to_collection(&conn, &book_id, &collection_id).map_err(|e| e.to_string())
+    db::add_book_to_collection(&conn, &book_id, &collection_id).map_err(|e| e.to_string())?;
+    log_activity(
+        &conn,
+        "collection_modified",
+        "collection",
+        Some(&collection_id),
+        None,
+        Some(&format!("Added book {}", book_id)),
+    );
+    Ok(())
 }
 
 #[tauri::command]
@@ -1125,7 +1214,16 @@ pub async fn remove_book_from_collection(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
-    db::remove_book_from_collection(&conn, &book_id, &collection_id).map_err(|e| e.to_string())
+    db::remove_book_from_collection(&conn, &book_id, &collection_id).map_err(|e| e.to_string())?;
+    log_activity(
+        &conn,
+        "collection_modified",
+        "collection",
+        Some(&collection_id),
+        None,
+        Some(&format!("Removed book {}", book_id)),
+    );
+    Ok(())
 }
 
 #[tauri::command]
@@ -1284,6 +1382,16 @@ pub async fn enrich_book_from_openlibrary(
     book.rating = rating;
     book.isbn = isbn;
     book.openlibrary_key = Some(openlibrary_key);
+
+    log_activity(
+        &conn,
+        "book_enriched",
+        "book",
+        Some(&book_id),
+        None,
+        Some("Enriched from OpenLibrary"),
+    );
+
     Ok(book)
 }
 
@@ -1624,7 +1732,19 @@ pub async fn switch_profile(name: String, state: State<'_, AppState>) -> Result<
         }
     }
     let mut active = state.active_profile.lock().map_err(|e| e.to_string())?;
-    *active = name;
+    *active = name.clone();
+    drop(active);
+
+    let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
+    log_activity(
+        &conn,
+        "profile_switched",
+        "profile",
+        None,
+        Some(&name),
+        None,
+    );
+
     Ok(())
 }
 
@@ -1902,6 +2022,21 @@ pub async fn export_library(
     }
 
     zip.finish().map_err(|e| e.to_string())?;
+
+    let export_detail = if include_files {
+        "Full backup with files"
+    } else {
+        "Metadata only"
+    };
+    log_activity(
+        &conn,
+        "library_exported",
+        "library",
+        None,
+        None,
+        Some(export_detail),
+    );
+
     Ok(dest_path)
 }
 
@@ -1989,6 +2124,15 @@ pub async fn import_library_backup(
         }
     }
 
+    log_activity(
+        &conn,
+        "library_imported",
+        "library",
+        None,
+        None,
+        Some("Restored from backup"),
+    );
+
     Ok(imported)
 }
 
@@ -2072,12 +2216,25 @@ pub async fn run_backup(state: State<'_, AppState>) -> Result<crate::backup::Syn
     let mut config: crate::backup::BackupConfig =
         serde_json::from_str(&json).map_err(|e| e.to_string())?;
     crate::backup::load_secrets(&mut config);
+    let provider_name = config.provider_type.clone();
     let op = crate::backup::build_operator(&config)?;
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let _ = tx.send(crate::backup::run_incremental_backup(&op, &conn));
     });
-    rx.recv().map_err(|e| format!("Thread error: {e}"))?
+    let result = rx.recv().map_err(|e| format!("Thread error: {e}"))?;
+    if result.is_ok() {
+        let log_conn = state.active_db()?.get().map_err(|e| e.to_string())?;
+        log_activity(
+            &log_conn,
+            "backup_completed",
+            "library",
+            None,
+            None,
+            Some(&format!("Provider: {:?}", provider_name)),
+        );
+    }
+    result
 }
 
 #[tauri::command]
@@ -2354,12 +2511,29 @@ pub async fn scan_single_book(book_id: String, state: State<'_, AppState>) -> Re
                 db::update_book(&conn, &book).map_err(|e| e.to_string())?;
             }
             db::set_enrichment_status(&conn, &book_id, "enriched").map_err(|e| e.to_string())?;
-            db::get_book(&conn, &book_id)
+            let updated_book = db::get_book(&conn, &book_id)
                 .map_err(|e| e.to_string())?
-                .ok_or_else(|| "Book not found".to_string())
+                .ok_or_else(|| "Book not found".to_string())?;
+            log_activity(
+                &conn,
+                "book_scanned",
+                "book",
+                Some(&book_id),
+                Some(&updated_book.title),
+                Some(&format!("Matched via {}", result.data.source)),
+            );
+            Ok(updated_book)
         }
         None => {
             db::set_enrichment_status(&conn, &book_id, "skipped").map_err(|e| e.to_string())?;
+            log_activity(
+                &conn,
+                "book_scanned",
+                "book",
+                Some(&book_id),
+                Some(&book.title),
+                Some("No match found"),
+            );
             Err("No match found".to_string())
         }
     }
