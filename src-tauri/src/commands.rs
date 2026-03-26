@@ -13,11 +13,17 @@ use crate::opds;
 use crate::openlibrary;
 use crate::pdf;
 
+/// Maximum number of EPUB archives kept open in the cache.
+const EPUB_CACHE_MAX: usize = 5;
+
 pub struct AppState {
     pub db: DbPool,
     pub profiles: std::sync::Mutex<std::collections::HashMap<String, DbPool>>,
     pub active_profile: std::sync::Mutex<String>,
     pub data_dir: std::path::PathBuf,
+    /// Cache of opened EPUB zip archives keyed by file path, avoiding
+    /// re-opening the zip and re-parsing OPF on every page turn.
+    pub epub_cache: std::sync::Mutex<std::collections::HashMap<String, epub::CachedEpubArchive>>,
 }
 
 impl AppState {
@@ -423,6 +429,13 @@ pub async fn remove_book(book_id: String, state: State<'_, AppState>) -> Result<
 
     db::delete_book(&conn, &book_id).map_err(|e| e.to_string())?;
 
+    // Evict the EPUB archive cache entry for this file.
+    if let Some(ref path) = file_path {
+        if let Ok(mut cache) = state.epub_cache.lock() {
+            cache.remove(path);
+        }
+    }
+
     // Remove the physical file; ignore NotFound, log but don't fail on other errors.
     if let Some(path) = file_path {
         if let Err(e) = std::fs::remove_file(&path) {
@@ -557,7 +570,18 @@ pub async fn get_chapter_content(
 
     validate_file_exists(&file_path)?;
     let data_dir = state.data_dir.to_string_lossy().to_string();
-    epub::get_chapter_content(&file_path, chapter_index as usize, &data_dir, &book_id)
+
+    let mut cache = state.epub_cache.lock().map_err(|e| e.to_string())?;
+    if !cache.contains_key(&file_path) {
+        // Evict all entries when the cache is full (simple policy for a desktop app).
+        if cache.len() >= EPUB_CACHE_MAX {
+            cache.clear();
+        }
+        let c = epub::CachedEpubArchive::open(&file_path).map_err(|e| e.to_string())?;
+        cache.insert(file_path.clone(), c);
+    }
+    let cached = cache.get_mut(&file_path).unwrap();
+    epub::get_chapter_content_from_cache(cached, chapter_index as usize, &data_dir, &book_id)
         .map_err(|e| e.to_string())
 }
 
@@ -575,7 +599,17 @@ pub async fn get_toc(
     };
 
     validate_file_exists(&file_path)?;
-    epub::get_toc(&file_path).map_err(|e| e.to_string())
+
+    let mut cache = state.epub_cache.lock().map_err(|e| e.to_string())?;
+    if !cache.contains_key(&file_path) {
+        if cache.len() >= EPUB_CACHE_MAX {
+            cache.clear();
+        }
+        let c = epub::CachedEpubArchive::open(&file_path).map_err(|e| e.to_string())?;
+        cache.insert(file_path.clone(), c);
+    }
+    let cached = cache.get_mut(&file_path).unwrap();
+    epub::get_toc_from_cache(cached).map_err(|e| e.to_string())
 }
 
 // --- Progress ---

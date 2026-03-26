@@ -65,6 +65,42 @@ pub struct TocEntry {
     pub children: Vec<TocEntry>,
 }
 
+// ---- Cached archive ----
+
+/// Holds an opened EPUB zip archive together with pre-parsed OPF metadata
+/// so that consecutive calls (e.g. page turns) do not re-open the file.
+pub struct CachedEpubArchive {
+    archive: ZipArchive<std::fs::File>,
+    #[allow(dead_code)]
+    opf: String,
+    base_dir: String,
+    manifest: HashMap<String, ManifestItem>,
+    spine: Vec<String>,
+}
+
+// ZipArchive<File> is not Send by default, but we protect access with a std::sync::Mutex
+// in AppState so this is safe.
+unsafe impl Send for CachedEpubArchive {}
+
+impl CachedEpubArchive {
+    pub fn open(file_path: &str) -> Result<Self, EpubError> {
+        let file = std::fs::File::open(file_path).map_err(EpubError::Io)?;
+        let mut archive = ZipArchive::new(file)?;
+        let opf_path = find_opf_path(&mut archive)?;
+        let opf = read_zip_entry(&mut archive, &opf_path)?;
+        let base_dir = opf_base_dir(&opf_path).to_string();
+        let manifest = parse_manifest(&opf);
+        let spine = parse_spine_idrefs(&opf);
+        Ok(Self {
+            archive,
+            opf,
+            base_dir,
+            manifest,
+            spine,
+        })
+    }
+}
+
 // ---- Internal manifest item ----
 
 #[derive(Debug, Clone)]
@@ -599,6 +635,49 @@ pub fn get_chapter_content(
     ))
 }
 
+/// Like [`get_chapter_content`] but operates on a [`CachedEpubArchive`],
+/// avoiding the cost of re-opening the zip and re-parsing OPF metadata.
+pub fn get_chapter_content_from_cache(
+    cached: &mut CachedEpubArchive,
+    chapter_index: usize,
+    data_dir: &str,
+    book_id: &str,
+) -> Result<String, EpubError> {
+    let idref = cached.spine.get(chapter_index).ok_or_else(|| {
+        EpubError::InvalidFormat(format!("Chapter index {chapter_index} out of range"))
+    })?;
+
+    let href = cached
+        .manifest
+        .get(idref)
+        .map(|item| item.href.clone())
+        .ok_or_else(|| EpubError::MissingFile(format!("Manifest item '{idref}' not found")))?;
+
+    let base_dir = &cached.base_dir;
+    let entry_name = find_zip_entry_name(&mut cached.archive, base_dir, &href)
+        .ok_or_else(|| EpubError::MissingFile(format!("{base_dir}{href}")))?;
+
+    let raw_html = read_zip_entry(&mut cached.archive, &entry_name)?;
+    let cleaned = clean(&raw_html);
+
+    let chapter_dir = {
+        let full_path = format!("{base_dir}{href}");
+        match full_path.rfind('/') {
+            Some(pos) => full_path[..pos + 1].to_string(),
+            None => String::new(),
+        }
+    };
+
+    let image_dir = format!("{}/images/{}/{}", data_dir, book_id, chapter_index);
+
+    Ok(rewrite_img_srcs_to_asset_urls(
+        &cleaned,
+        &mut cached.archive,
+        &chapter_dir,
+        &image_dir,
+    ))
+}
+
 // ---- Inline-image helpers ----
 
 /// Resolve a relative path against a zip-internal base directory.
@@ -822,6 +901,74 @@ pub fn get_toc(file_path: &str) -> Result<Vec<TocEntry>, EpubError> {
         .enumerate()
         .filter_map(|(i, idref)| {
             manifest.get(idref).map(|_| TocEntry {
+                label: format!("Chapter {}", i + 1),
+                chapter_index: i,
+                children: vec![],
+            })
+        })
+        .collect();
+    Ok(toc)
+}
+
+/// Like [`get_toc`] but operates on a [`CachedEpubArchive`].
+pub fn get_toc_from_cache(cached: &mut CachedEpubArchive) -> Result<Vec<TocEntry>, EpubError> {
+    let href_to_index: HashMap<String, usize> = cached
+        .spine
+        .iter()
+        .enumerate()
+        .filter_map(|(i, idref)| {
+            cached
+                .manifest
+                .get(idref)
+                .map(|item| (item.href.clone(), i))
+        })
+        .collect();
+
+    // Try EPUB 3 nav document first
+    let nav_href = cached.manifest.iter().find_map(|(_, item)| {
+        item.properties
+            .as_deref()
+            .filter(|p| p.split_whitespace().any(|prop| prop == "nav"))
+            .map(|_| item.href.clone())
+    });
+
+    if let Some(nav_href) = nav_href {
+        let entry_name = find_zip_entry_name(&mut cached.archive, &cached.base_dir, &nav_href);
+        if let Some(name) = entry_name {
+            if let Ok(nav_content) = read_zip_entry(&mut cached.archive, &name) {
+                let entries = parse_nav_toc(&nav_content, &href_to_index);
+                if !entries.is_empty() {
+                    return Ok(entries);
+                }
+            }
+        }
+    }
+
+    // Fall back to EPUB 2 NCX
+    let ncx_href = cached.manifest.iter().find_map(|(_, item)| {
+        if item.href.ends_with(".ncx") {
+            Some(item.href.clone())
+        } else {
+            None
+        }
+    });
+
+    if let Some(ncx_href) = ncx_href {
+        let entry_name = find_zip_entry_name(&mut cached.archive, &cached.base_dir, &ncx_href);
+        if let Some(name) = entry_name {
+            if let Ok(ncx_content) = read_zip_entry(&mut cached.archive, &name) {
+                return Ok(parse_ncx_toc(&ncx_content, &href_to_index));
+            }
+        }
+    }
+
+    // Fallback: generate TOC from spine
+    let toc = cached
+        .spine
+        .iter()
+        .enumerate()
+        .filter_map(|(i, idref)| {
+            cached.manifest.get(idref).map(|_| TocEntry {
                 label: format!("Chapter {}", i + 1),
                 chapter_index: i,
                 children: vec![],

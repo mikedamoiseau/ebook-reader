@@ -80,6 +80,7 @@ pub fn run() {
                 profiles: std::sync::Mutex::new(profiles),
                 active_profile: std::sync::Mutex::new("default".to_string()),
                 data_dir,
+                epub_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
             });
             Ok(())
         })
