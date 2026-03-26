@@ -9,6 +9,7 @@ pub mod models;
 pub mod opds;
 pub mod openlibrary;
 pub mod pdf;
+pub mod providers;
 
 use commands::AppState;
 use tauri::Manager;
