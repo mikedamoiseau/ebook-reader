@@ -556,7 +556,10 @@ export default function Library() {
               <div
                 key={book.id}
                 draggable
-                onDragStart={(e) => e.dataTransfer.setData("bookId", book.id)}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("text/plain", book.id);
+                  e.dataTransfer.effectAllowed = "copy";
+                }}
               >
                 <BookCard
                   id={book.id}

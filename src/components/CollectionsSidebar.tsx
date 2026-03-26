@@ -104,6 +104,7 @@ function CollectionRow({
   const handleDragOver = (e: React.DragEvent) => {
     if (!isManual) return;
     e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
     setIsDragOver(true);
   };
 
@@ -112,8 +113,9 @@ function CollectionRow({
   const handleDrop = (e: React.DragEvent) => {
     if (!isManual) return;
     e.preventDefault();
+    e.stopPropagation();
     setIsDragOver(false);
-    const bookId = e.dataTransfer.getData("bookId");
+    const bookId = e.dataTransfer.getData("text/plain");
     if (bookId) onDropBook(bookId, collection.id);
   };
 
