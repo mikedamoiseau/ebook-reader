@@ -130,11 +130,12 @@ Expand where books come from and how they persist.
 - ~~Allow users to add custom OPDS catalog URLs (for self-hosted Calibre servers, etc.)~~
 - ~~Show available formats per result, prefer EPUB when available~~
 
-### 15. Reading Position Sync
+### 15. Reading Position Sync / Multi-Device Sync
 - Sync progress, bookmarks, and highlights across devices
-- Needs a sync backend (could piggyback on Google Drive / Dropbox, or a lightweight custom server)
-- Conflict resolution for divergent progress
-- *Depends on: Remote Files*
+- Current remote backup is single-device (overwrites remote metadata)
+- Multi-device support: per-device files or merge-on-push to avoid data loss
+- Conflict resolution for divergent progress (last-write-wins or manual merge)
+- *Depends on: Remote Backup (Phase 3)*
 
 ## Phase 4: Discovery & Social
 

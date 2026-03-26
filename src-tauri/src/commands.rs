@@ -1738,8 +1738,10 @@ pub async fn save_backup_config(
     config: crate::backup::BackupConfig,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    // Store secrets in OS keychain, save only non-secret values to DB
+    let clean = crate::backup::store_secrets(&config);
     let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
-    let json = serde_json::to_string(&config).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string(&clean).map_err(|e| e.to_string())?;
     db::set_setting(&conn, "backup_config", &json).map_err(|e| e.to_string())
 }
 
@@ -1749,7 +1751,13 @@ pub async fn get_backup_config(
 ) -> Result<Option<crate::backup::BackupConfig>, String> {
     let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
     match db::get_setting(&conn, "backup_config").map_err(|e| e.to_string())? {
-        Some(j) => Ok(Some(serde_json::from_str(&j).map_err(|e| e.to_string())?)),
+        Some(j) => {
+            let mut config: crate::backup::BackupConfig =
+                serde_json::from_str(&j).map_err(|e| e.to_string())?;
+            // Load secrets from OS keychain
+            crate::backup::load_secrets(&mut config);
+            Ok(Some(config))
+        }
         None => Ok(None),
     }
 }
@@ -1760,8 +1768,9 @@ pub async fn run_backup(state: State<'_, AppState>) -> Result<crate::backup::Syn
     let json = db::get_setting(&conn, "backup_config")
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "No backup provider configured".to_string())?;
-    let config: crate::backup::BackupConfig =
+    let mut config: crate::backup::BackupConfig =
         serde_json::from_str(&json).map_err(|e| e.to_string())?;
+    crate::backup::load_secrets(&mut config);
     let op = crate::backup::build_operator(&config)?;
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
@@ -1779,8 +1788,9 @@ pub async fn get_backup_status(
         Some(j) => j,
         None => return Ok(None),
     };
-    let config: crate::backup::BackupConfig =
+    let mut config: crate::backup::BackupConfig =
         serde_json::from_str(&json).map_err(|e| e.to_string())?;
+    crate::backup::load_secrets(&mut config);
     let op = crate::backup::build_operator(&config)?;
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {

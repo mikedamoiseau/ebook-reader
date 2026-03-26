@@ -263,7 +263,15 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   };
 
   const handleSaveBackupConfig = async () => {
-    if (!selectedProvider) return;
+    if (!selectedProvider || !currentProviderInfo) return;
+    // Validate required fields
+    const missing = currentProviderInfo.fields.filter(
+      (f) => f.required && !backupFieldValues[f.key]?.trim()
+    );
+    if (missing.length > 0) {
+      setRemoteBackupMessage(`Required: ${missing.map((f) => f.label).join(", ")}`);
+      return;
+    }
     setSavingBackupConfig(true);
     setRemoteBackupMessage(null);
     try {
@@ -536,28 +544,48 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 </div>
 
                 {/* Dynamic config fields */}
-                {currentProviderInfo && currentProviderInfo.fields.map((field) => (
-                  <div key={field.key} className="bg-warm-subtle rounded-xl px-3 py-2.5">
-                    <label className="text-xs text-ink-muted mb-1 block">
-                      {field.label}
-                      {field.required && (
-                        <span className="text-accent ml-1">*</span>
-                      )}
-                    </label>
-                    <input
-                      type={field.fieldType === "password" ? "password" : "text"}
-                      value={backupFieldValues[field.key] ?? ""}
-                      onChange={(e) =>
-                        setBackupFieldValues((prev) => ({
-                          ...prev,
-                          [field.key]: e.target.value,
-                        }))
-                      }
-                      placeholder={field.placeholder}
-                      className="w-full bg-transparent text-sm text-ink placeholder:text-ink-muted/50 focus:outline-none"
-                    />
-                  </div>
-                ))}
+                {currentProviderInfo && currentProviderInfo.fields.map((field) => {
+                  if (field.fieldType === "checkbox") {
+                    return (
+                      <label key={field.key} className="flex items-center gap-2.5 cursor-pointer px-1">
+                        <input
+                          type="checkbox"
+                          checked={backupFieldValues[field.key] === "true"}
+                          onChange={(e) =>
+                            setBackupFieldValues((prev) => ({
+                              ...prev,
+                              [field.key]: e.target.checked ? "true" : "false",
+                            }))
+                          }
+                          className="accent-accent"
+                        />
+                        <span className="text-sm text-ink">{field.label}</span>
+                      </label>
+                    );
+                  }
+                  return (
+                    <div key={field.key} className="bg-warm-subtle rounded-xl px-3 py-2.5">
+                      <label className="text-xs text-ink-muted mb-1 block">
+                        {field.label}
+                        {field.required && (
+                          <span className="text-accent ml-1">*</span>
+                        )}
+                      </label>
+                      <input
+                        type={field.fieldType === "password" ? "password" : "text"}
+                        value={backupFieldValues[field.key] ?? ""}
+                        onChange={(e) =>
+                          setBackupFieldValues((prev) => ({
+                            ...prev,
+                            [field.key]: e.target.value,
+                          }))
+                        }
+                        placeholder={field.placeholder}
+                        className="w-full bg-transparent text-sm text-ink placeholder:text-ink-muted/50 focus:outline-none"
+                      />
+                    </div>
+                  );
+                })}
 
                 {/* Save config */}
                 <button

@@ -279,17 +279,25 @@ pub fn update_book_enrichment(
     isbn: Option<&str>,
     openlibrary_key: Option<&str>,
 ) -> Result<()> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
     conn.execute(
-        "UPDATE books SET description=?2, genres=?3, rating=?4, isbn=?5, openlibrary_key=?6 WHERE id=?1",
-        params![book_id, description, genres, rating, isbn, openlibrary_key],
+        "UPDATE books SET description=?2, genres=?3, rating=?4, isbn=?5, openlibrary_key=?6, updated_at=?7 WHERE id=?1",
+        params![book_id, description, genres, rating, isbn, openlibrary_key, now],
     )?;
     Ok(())
 }
 
 pub fn update_book_file_path(conn: &Connection, book_id: &str, new_path: &str) -> Result<()> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
     conn.execute(
-        "UPDATE books SET file_path = ?2 WHERE id = ?1",
-        params![book_id, new_path],
+        "UPDATE books SET file_path = ?2, updated_at = ?3 WHERE id = ?1",
+        params![book_id, new_path, now],
     )?;
     Ok(())
 }
@@ -723,9 +731,13 @@ pub fn get_chapter_highlights(
 }
 
 pub fn update_highlight_note(conn: &Connection, id: &str, note: Option<&str>) -> Result<()> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
     conn.execute(
-        "UPDATE highlights SET note = ?2 WHERE id = ?1",
-        params![id, note],
+        "UPDATE highlights SET note = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, note, now],
     )?;
     Ok(())
 }

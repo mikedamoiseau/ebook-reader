@@ -1,5 +1,53 @@
 use opendal::blocking::Operator;
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
+
+static FALLBACK_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+
+/// Identify which config fields contain secrets (passwords/keys).
+pub fn secret_keys(provider_type: &ProviderType) -> Vec<&'static str> {
+    match provider_type {
+        ProviderType::S3 => vec!["access_key_id", "secret_access_key"],
+        ProviderType::Ftp => vec!["password"],
+        ProviderType::Webdav => vec!["password"],
+        ProviderType::Fs => vec![],
+    }
+}
+
+/// Store secret values in the OS keychain. Returns the config with secrets removed.
+pub fn store_secrets(config: &BackupConfig) -> BackupConfig {
+    let secrets = secret_keys(&config.provider_type);
+    let mut clean = config.clone();
+    for key in &secrets {
+        if let Some(value) = config.values.get(*key) {
+            if value.is_empty() {
+                continue;
+            }
+            let service = format!("folio-backup-{}", key);
+            if let Ok(entry) = keyring::Entry::new(&service, "default") {
+                let _ = entry.set_password(value);
+            }
+            clean.values.remove(*key);
+        }
+    }
+    clean
+}
+
+/// Load secret values from the OS keychain into a config.
+pub fn load_secrets(config: &mut BackupConfig) {
+    let secrets = secret_keys(&config.provider_type);
+    for key in &secrets {
+        if config.values.contains_key(*key) {
+            continue; // already populated (e.g. test config)
+        }
+        let service = format!("folio-backup-{}", key);
+        if let Ok(entry) = keyring::Entry::new(&service, "default") {
+            if let Ok(pw) = entry.get_password() {
+                config.values.insert(key.to_string(), pw);
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -104,6 +152,13 @@ pub fn provider_schemas() -> Vec<ProviderInfo> {
                     placeholder: "".into(),
                 },
                 ConfigField {
+                    key: "use_tls".into(),
+                    label: "Use TLS (FTPS)".into(),
+                    field_type: "checkbox".into(),
+                    required: false,
+                    placeholder: "".into(),
+                },
+                ConfigField {
                     key: "root".into(),
                     label: "Remote path".into(),
                     field_type: "text".into(),
@@ -163,17 +218,14 @@ pub fn build_operator(config: &BackupConfig) -> Result<Operator, String> {
             let _guard = handle.enter();
             Operator::new(async_op).map_err(|e| format!("Failed to create blocking operator: {e}"))
         } else {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| format!("Failed to build tokio runtime: {e}"))?;
+            let rt = FALLBACK_RUNTIME.get_or_init(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("Failed to build fallback tokio runtime")
+            });
             let _guard = rt.enter();
-            let op = Operator::new(async_op)
-                .map_err(|e| format!("Failed to create blocking operator: {e}"))?;
-            // Leak the runtime so the handle stays valid for the lifetime of the
-            // returned operator (acceptable for desktop-app / test usage).
-            std::mem::forget(rt);
-            Ok(op)
+            Operator::new(async_op).map_err(|e| format!("Failed to create blocking operator: {e}"))
         }
     }
 
@@ -205,7 +257,16 @@ pub fn build_operator(config: &BackupConfig) -> Result<Operator, String> {
         ProviderType::Ftp => {
             let mut builder = opendal::services::Ftp::default();
             if let Some(v) = config.values.get("endpoint") {
-                builder = builder.endpoint(v);
+                // Prepend ftps:// if TLS is enabled and endpoint has no scheme
+                let endpoint = if config.values.get("use_tls").is_some_and(|t| t == "true")
+                    && !v.starts_with("ftps://")
+                    && !v.starts_with("ftp://")
+                {
+                    format!("ftps://{v}")
+                } else {
+                    v.clone()
+                };
+                builder = builder.endpoint(&endpoint);
             }
             if let Some(v) = config.values.get("user") {
                 builder = builder.user(v);
@@ -272,6 +333,7 @@ pub struct SyncResult {
     pub highlights_pushed: u32,
     pub collections_pushed: u32,
     pub files_pushed: u32,
+    pub warnings: Vec<String>,
 }
 
 pub fn read_manifest(op: &Operator) -> SyncManifest {
@@ -334,7 +396,24 @@ pub fn run_incremental_backup(
         highlights_pushed: 0,
         collections_pushed: 0,
         files_pushed: 0,
+        warnings: Vec::new(),
     };
+
+    // Helper: collect rows, logging failures as warnings instead of silently dropping
+    fn collect_rows<T>(
+        rows: rusqlite::MappedRows<'_, impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<T>>,
+        entity: &str,
+        warnings: &mut Vec<String>,
+    ) -> Vec<T> {
+        let mut items = Vec::new();
+        for (i, row) in rows.enumerate() {
+            match row {
+                Ok(item) => items.push(item),
+                Err(e) => warnings.push(format!("Skipped {} row {}: {}", entity, i, e)),
+            }
+        }
+        items
+    }
 
     // Books
     let books: Vec<crate::models::Book> = {
@@ -366,7 +445,7 @@ pub fn run_incremental_backup(
                 })
             })
             .map_err(|e| e.to_string())?;
-        rows.filter_map(|r| r.ok()).collect()
+        collect_rows(rows, "book", &mut result.warnings)
     };
     if !books.is_empty() {
         result.books_pushed = books.len() as u32;
@@ -410,7 +489,7 @@ pub fn run_incremental_backup(
                 })
             })
             .map_err(|e| e.to_string())?;
-        rows.filter_map(|r| r.ok()).collect()
+        collect_rows(rows, "progress", &mut result.warnings)
     };
     if !progress.is_empty() {
         result.progress_pushed = progress.len() as u32;
@@ -436,7 +515,7 @@ pub fn run_incremental_backup(
                 })
             })
             .map_err(|e| e.to_string())?;
-        rows.filter_map(|r| r.ok()).collect()
+        collect_rows(rows, "bookmark", &mut result.warnings)
     };
     if !bookmarks.is_empty() {
         result.bookmarks_pushed = bookmarks.len() as u32;
@@ -465,7 +544,7 @@ pub fn run_incremental_backup(
                 })
             })
             .map_err(|e| e.to_string())?;
-        rows.filter_map(|r| r.ok()).collect()
+        collect_rows(rows, "highlight", &mut result.warnings)
     };
     if !highlights.is_empty() {
         result.highlights_pushed = highlights.len() as u32;
