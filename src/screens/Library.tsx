@@ -60,6 +60,10 @@ export default function Library() {
   // Recently read
   const [recentlyRead, setRecentlyRead] = useState<Book[]>([]);
 
+  // Discover — popular/new books from catalogs (loaded lazily, cached 24h)
+  interface DiscoverEntry { id: string; title: string; author: string; summary: string; coverUrl: string | null; links: { href: string; mimeType: string; rel: string }[]; navUrl: string | null }
+  const [discoverBooks, setDiscoverBooks] = useState<DiscoverEntry[]>([]);
+
   // Collections state
   const [collectionsOpen, setCollectionsOpen] = useState(false);
   const [collections, setCollections] = useState<Collection[]>([]);
@@ -131,6 +135,16 @@ export default function Library() {
     loadBooks(null);
     loadRecentlyRead();
   }, [loadCollections, loadBooks, loadRecentlyRead]);
+
+  // Load discover books lazily in background (doesn't block UI)
+  useEffect(() => {
+    if (!loaded) return;
+    let cancelled = false;
+    invoke<DiscoverEntry[]>("get_discover_books")
+      .then((entries) => { if (!cancelled) setDiscoverBooks(entries); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [loaded]);
 
   // Reload books when active collection changes
   useEffect(() => {
@@ -573,6 +587,63 @@ export default function Library() {
               </div>
             </div>
           )}
+          {/* Discover — popular/new from catalogs */}
+          {!search && !activeCollectionId && discoverBooks.length > 0 && (
+            <div className="mb-6">
+              <h2 className="text-sm font-semibold text-ink-muted uppercase tracking-wide mb-3">Discover</h2>
+              <div className="flex gap-4 overflow-x-auto pb-2">
+                {discoverBooks.map((entry) => {
+                  const epubLink = entry.links.find((l) => l.mimeType.includes("epub"));
+                  const pdfLink = entry.links.find((l) => l.mimeType.includes("pdf"));
+                  const downloadLink = epubLink ?? pdfLink;
+                  return (
+                    <div
+                      key={entry.id}
+                      className="shrink-0 w-28 group text-left rounded-lg overflow-hidden bg-surface border border-warm-border hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+                    >
+                      <div className="aspect-[2/3] bg-warm-subtle overflow-hidden">
+                        {entry.coverUrl ? (
+                          <img
+                            src={entry.coverUrl}
+                            alt={entry.title}
+                            className="w-full h-full object-cover"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                          />
+                        ) : (
+                          <div className="flex items-center justify-center w-full h-full">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="text-ink-muted opacity-40">
+                              <path d="M4 19.5v-15A2.5 2.5 0 016.5 2H20v20H6.5a2.5 2.5 0 010-5H20" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+                      <div className="px-2 py-1.5">
+                        <p className="text-xs font-medium text-ink truncate">{entry.title}</p>
+                        {entry.author && <p className="text-[10px] text-ink-muted truncate">{entry.author}</p>}
+                        {downloadLink && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                await invoke("download_opds_book", { downloadUrl: downloadLink.href });
+                                await loadBooks(activeCollectionIdRef.current);
+                                setDiscoverBooks((prev) => prev.filter((e) => e.id !== entry.id));
+                              } catch (err) {
+                                setError(String(err));
+                              }
+                            }}
+                            className="mt-1 text-[10px] font-medium text-accent hover:text-accent-hover transition-colors"
+                          >
+                            + Add to library
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-[repeat(auto-fill,160px)] justify-center gap-5">
             {filtered.map((book) => (
               <div

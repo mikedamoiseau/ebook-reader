@@ -1,9 +1,9 @@
 use quick_xml::events::Event;
 use quick_xml::Reader;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// A single entry from an OPDS feed (book or navigation link).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpdsEntry {
     pub id: String,
@@ -17,7 +17,7 @@ pub struct OpdsEntry {
     pub nav_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpdsLink {
     pub href: String,

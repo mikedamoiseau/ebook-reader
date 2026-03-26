@@ -135,6 +135,7 @@ pub fn run() {
             commands::get_opds_catalogs,
             commands::add_opds_catalog,
             commands::remove_opds_catalog,
+            commands::get_discover_books,
             commands::browse_opds,
             commands::search_all_catalogs,
             commands::download_opds_book,

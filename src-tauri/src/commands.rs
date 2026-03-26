@@ -1213,6 +1213,90 @@ pub async fn search_all_catalogs(
     Ok(all_entries)
 }
 
+/// Returns a cached list of popular/new books from all configured catalogs.
+/// Results are cached for 24 hours in the settings DB to avoid slowing down startup.
+#[tauri::command]
+pub async fn get_discover_books(
+    state: State<'_, AppState>,
+) -> Result<Vec<opds::OpdsEntry>, String> {
+    let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
+
+    // Check cache (stored as JSON with a timestamp)
+    if let Some(cached) = db::get_setting(&conn, "discover_cache").map_err(|e| e.to_string())? {
+        if let Ok(cache) = serde_json::from_str::<serde_json::Value>(&cached) {
+            let cached_at = cache["cached_at"].as_i64().unwrap_or(0);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
+            if now - cached_at < 86400 {
+                // Cache is fresh (< 24h)
+                if let Ok(entries) =
+                    serde_json::from_value::<Vec<opds::OpdsEntry>>(cache["entries"].clone())
+                {
+                    return Ok(entries);
+                }
+            }
+        }
+    }
+
+    // Cache miss or stale — fetch from catalogs in parallel
+    let catalogs = get_opds_catalogs(state).await?;
+    let (result_tx, result_rx) = std::sync::mpsc::channel();
+    let mut thread_count = 0;
+
+    for cat in &catalogs {
+        let url = cat.url.clone();
+        let tx = result_tx.clone();
+        let cat_name = cat.name.clone();
+        std::thread::spawn(move || {
+            let entries = match opds::fetch_feed(&url) {
+                Ok(feed) => feed
+                    .entries
+                    .into_iter()
+                    .filter(|e| !e.links.is_empty() || e.nav_url.is_some())
+                    .take(10)
+                    .map(|mut e| {
+                        // Tag with catalog source
+                        if e.summary.is_empty() {
+                            e.summary = format!("From {}", cat_name);
+                        }
+                        e
+                    })
+                    .collect::<Vec<_>>(),
+                Err(_) => Vec::new(),
+            };
+            let _ = tx.send(entries);
+        });
+        thread_count += 1;
+    }
+    drop(result_tx);
+
+    let mut all_entries = Vec::new();
+    for _ in 0..thread_count {
+        if let Ok(entries) = result_rx.recv() {
+            all_entries.extend(entries);
+        }
+    }
+
+    // Cache the results
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let cache = serde_json::json!({
+        "cached_at": now,
+        "entries": all_entries,
+    });
+    let _ = db::set_setting(
+        &conn,
+        "discover_cache",
+        &serde_json::to_string(&cache).unwrap_or_default(),
+    );
+
+    Ok(all_entries)
+}
+
 #[tauri::command]
 pub async fn browse_opds(url: String) -> Result<opds::OpdsFeed, String> {
     let (tx, rx) = std::sync::mpsc::channel();

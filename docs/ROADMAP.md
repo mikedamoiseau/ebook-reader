@@ -162,10 +162,13 @@ Expand where books come from and how they persist.
 - ~~Format: Markdown, JSON~~ (shareable link TBD)
 - Import a shared list to see which books you have/are missing (TBD)
 
-### 20. Book Recommendations
-- "If you liked X" suggestions based on your library and reading patterns
-- Could use OpenLibrary subjects/genres or an LLM-based approach
-- Lower priority — needs a critical mass of books to be useful
+### 20. Book Recommendations — **Partial** *(Discover section)*
+- ~~Discover section: popular/new books from configured OPDS catalogs, shown on library home~~
+- ~~Cached 24h to avoid slowing down startup; fetched lazily in background~~
+- ~~One-click download from Discover cards~~
+- "More by this author" — search catalogs for same author (TBD)
+- Genre-based suggestions from OpenLibrary subject tags (TBD)
+- "If you liked X" personalized recommendations (needs critical mass of books)
 
 ## Phase 5: Multi-User
 
@@ -183,5 +186,5 @@ Expand where books come from and how they persist.
 | 1 | Copy-on-Import, Multi-File Picker, Collections, Sort/Filter, Tags | 5 done | Storage & organization |
 | 2 | Highlights, Metadata Edit, Keyboard Shortcuts, Dictionary, TTS | 3 done, 2 not started | Reading experience |
 | 3 | Remote Files, Bulk Import, Backup, Book Discovery, Position Sync | 3 done, 1 partial, 1 not started | Import & sync |
-| 4 | Stats, Goodreads, Recents, Share, Recommendations | 3 done, 2 not started | Discovery & social |
+| 4 | Stats, Goodreads, Recents, Share, Recommendations | 4 done, 1 partial | Discovery & social |
 | 5 | Multiple Profiles | Done | Multi-user |
