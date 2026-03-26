@@ -24,6 +24,7 @@ pub struct AppState {
     /// Cache of opened EPUB zip archives keyed by file path, avoiding
     /// re-opening the zip and re-parsing OPF on every page turn.
     pub epub_cache: std::sync::Mutex<std::collections::HashMap<String, epub::CachedEpubArchive>>,
+    pub enrichment_registry: std::sync::Mutex<crate::providers::ProviderRegistry>,
 }
 
 impl AppState {
@@ -2104,6 +2105,17 @@ pub async fn start_scan(state: State<'_, AppState>, app: AppHandle) -> Result<()
         );
         return Ok(());
     }
+    let registry = {
+        let reg = state
+            .enrichment_registry
+            .lock()
+            .map_err(|e| e.to_string())?;
+        let mut new_reg = crate::providers::ProviderRegistry::new();
+        for info in reg.list_providers() {
+            new_reg.configure_provider(&info.id, info.config.clone());
+        }
+        new_reg
+    };
     let app_clone = app.clone();
     std::thread::spawn(move || {
         for (i, book) in books.iter().enumerate() {
@@ -2145,7 +2157,12 @@ pub async fn start_scan(state: State<'_, AppState>, app: AppHandle) -> Result<()
                 &book.author
             };
             let lookup_isbn = book.isbn.as_deref().or(parsed.isbn.as_deref());
-            match crate::enrichment::enrich_book(lookup_title, lookup_author, lookup_isbn) {
+            match crate::enrichment::enrich_book(
+                lookup_title,
+                lookup_author,
+                lookup_isbn,
+                &registry,
+            ) {
                 Some(result) if result.auto_apply => {
                     let genres_json = if !result.data.genres.is_empty() {
                         Some(serde_json::to_string(&result.data.genres).unwrap_or_default())
@@ -2159,12 +2176,36 @@ pub async fn start_scan(state: State<'_, AppState>, app: AppHandle) -> Result<()
                         genres_json.as_deref(),
                         result.data.rating,
                         result.data.isbn.as_deref().or(lookup_isbn),
-                        if result.data.key.is_empty() {
-                            None
-                        } else {
-                            Some(&result.data.key)
+                        match result.data.source_key.as_deref() {
+                            Some("") | None => None,
+                            some => some,
                         },
                     );
+                    // Apply new metadata fields if the book doesn't already have them
+                    if let Ok(Some(mut db_book)) = db::get_book(&conn, &book.id) {
+                        let mut changed = false;
+                        if db_book.language.is_none() {
+                            if let Some(ref v) = result.data.language {
+                                db_book.language = Some(v.clone());
+                                changed = true;
+                            }
+                        }
+                        if db_book.publisher.is_none() {
+                            if let Some(ref v) = result.data.publisher {
+                                db_book.publisher = Some(v.clone());
+                                changed = true;
+                            }
+                        }
+                        if db_book.publish_year.is_none() {
+                            if let Some(v) = result.data.publish_year {
+                                db_book.publish_year = Some(v);
+                                changed = true;
+                            }
+                        }
+                        if changed {
+                            let _ = db::update_book(&conn, &db_book);
+                        }
+                    }
                     let _ = db::set_enrichment_status(&conn, &book.id, "enriched");
                 }
                 _ => {
@@ -2215,12 +2256,28 @@ pub async fn scan_single_book(book_id: String, state: State<'_, AppState>) -> Re
         &book.author
     };
     let lookup_isbn = book.isbn.as_deref().or(parsed.isbn.as_deref());
+    let registry = {
+        let reg = state
+            .enrichment_registry
+            .lock()
+            .map_err(|e| e.to_string())?;
+        let mut new_reg = crate::providers::ProviderRegistry::new();
+        for info in reg.list_providers() {
+            new_reg.configure_provider(&info.id, info.config.clone());
+        }
+        new_reg
+    };
     let (tx, rx) = std::sync::mpsc::channel();
     let t = lookup_title.to_string();
     let a = lookup_author.to_string();
     let i = lookup_isbn.map(|s| s.to_string());
     std::thread::spawn(move || {
-        let _ = tx.send(crate::enrichment::enrich_book(&t, &a, i.as_deref()));
+        let _ = tx.send(crate::enrichment::enrich_book(
+            &t,
+            &a,
+            i.as_deref(),
+            &registry,
+        ));
     });
     let enrichment = rx.recv().map_err(|e| format!("Thread error: {e}"))?;
     match enrichment {
@@ -2237,13 +2294,38 @@ pub async fn scan_single_book(book_id: String, state: State<'_, AppState>) -> Re
                 genres_json.as_deref(),
                 result.data.rating,
                 result.data.isbn.as_deref().or(lookup_isbn),
-                if result.data.key.is_empty() {
-                    None
-                } else {
-                    Some(&result.data.key)
+                match result.data.source_key.as_deref() {
+                    Some("") | None => None,
+                    some => some,
                 },
             )
             .map_err(|e| e.to_string())?;
+            // Apply new metadata fields if the book doesn't already have them
+            let mut book = db::get_book(&conn, &book_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "Book not found".to_string())?;
+            let mut changed = false;
+            if book.language.is_none() {
+                if let Some(ref v) = result.data.language {
+                    book.language = Some(v.clone());
+                    changed = true;
+                }
+            }
+            if book.publisher.is_none() {
+                if let Some(ref v) = result.data.publisher {
+                    book.publisher = Some(v.clone());
+                    changed = true;
+                }
+            }
+            if book.publish_year.is_none() {
+                if let Some(v) = result.data.publish_year {
+                    book.publish_year = Some(v);
+                    changed = true;
+                }
+            }
+            if changed {
+                db::update_book(&conn, &book).map_err(|e| e.to_string())?;
+            }
             db::set_enrichment_status(&conn, &book_id, "enriched").map_err(|e| e.to_string())?;
             db::get_book(&conn, &book_id)
                 .map_err(|e| e.to_string())?
@@ -2282,6 +2364,45 @@ pub async fn set_setting_value(
 ) -> Result<(), String> {
     let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
     db::set_setting(&conn, &key, &value).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_enrichment_providers(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::providers::ProviderInfo>, String> {
+    let reg = state
+        .enrichment_registry
+        .lock()
+        .map_err(|e| e.to_string())?;
+    Ok(reg.list_providers())
+}
+
+#[tauri::command]
+pub async fn set_enrichment_provider_config(
+    provider_id: String,
+    enabled: bool,
+    api_key: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let config = crate::providers::ProviderConfig {
+        enabled,
+        api_key: api_key.filter(|k| !k.is_empty()),
+    };
+    let mut reg = state
+        .enrichment_registry
+        .lock()
+        .map_err(|e| e.to_string())?;
+    reg.configure_provider(&provider_id, config);
+    // Persist all provider configs
+    let all: std::collections::HashMap<String, crate::providers::ProviderConfig> = reg
+        .list_providers()
+        .into_iter()
+        .map(|p| (p.id, p.config))
+        .collect();
+    let json = serde_json::to_string(&all).map_err(|e| e.to_string())?;
+    let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
+    crate::db::set_setting(&conn, "enrichment_providers", &json).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[cfg(test)]

@@ -119,11 +119,11 @@ pub fn extract_isbn(identifier: &str) -> Option<String> {
     }
 }
 
-use crate::openlibrary::{self, OpenLibraryResult};
+use crate::providers::EnrichmentData;
 
 #[derive(Debug, Clone)]
 pub struct EnrichmentResult {
-    pub data: OpenLibraryResult,
+    pub data: EnrichmentData,
     pub confidence: f64,
     pub auto_apply: bool,
 }
@@ -153,13 +153,19 @@ pub fn title_similarity(a: &str, b: &str) -> f64 {
     }
 }
 
-pub fn enrich_book(title: &str, author: &str, isbn: Option<&str>) -> Option<EnrichmentResult> {
+pub fn enrich_book(
+    title: &str,
+    author: &str,
+    isbn: Option<&str>,
+    registry: &crate::providers::ProviderRegistry,
+) -> Option<EnrichmentResult> {
     // Tier 1: ISBN lookup
     if let Some(isbn) = isbn {
-        if let Ok(result) = openlibrary::lookup_isbn(isbn) {
-            if !result.title.is_empty() {
+        let results = registry.search_by_isbn(isbn);
+        if let Some(first) = results.into_iter().next() {
+            if !first.title.is_empty() {
                 return Some(EnrichmentResult {
-                    data: result,
+                    data: first,
                     confidence: 0.95,
                     auto_apply: true,
                 });
@@ -172,7 +178,7 @@ pub fn enrich_book(title: &str, author: &str, isbn: Option<&str>) -> Option<Enri
     } else {
         Some(author)
     };
-    let results = openlibrary::search(title, author_opt).ok()?;
+    let results = registry.search_by_title(title, author_opt);
     let first = results.into_iter().next()?;
     let sim = title_similarity(title, &first.title);
     if sim >= 0.85 {

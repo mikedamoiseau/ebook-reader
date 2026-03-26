@@ -76,12 +76,30 @@ pub fn run() {
                 }
             }
 
+            let enrichment_registry = {
+                let mut reg = crate::providers::ProviderRegistry::new();
+                if let Ok(conn) = pool.get() {
+                    if let Ok(Some(json)) = crate::db::get_setting(&conn, "enrichment_providers") {
+                        if let Ok(configs) = serde_json::from_str::<
+                            std::collections::HashMap<String, crate::providers::ProviderConfig>,
+                        >(&json)
+                        {
+                            for (id, config) in configs {
+                                reg.configure_provider(&id, config);
+                            }
+                        }
+                    }
+                }
+                std::sync::Mutex::new(reg)
+            };
+
             app.manage(AppState {
                 db: pool,
                 profiles: std::sync::Mutex::new(profiles),
                 active_profile: std::sync::Mutex::new("default".to_string()),
                 data_dir,
                 epub_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
+                enrichment_registry,
             });
             Ok(())
         })
@@ -153,6 +171,8 @@ pub fn run() {
             commands::queue_book_for_scan,
             commands::get_setting_value,
             commands::set_setting_value,
+            commands::get_enrichment_providers,
+            commands::set_enrichment_provider_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
