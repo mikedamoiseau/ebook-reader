@@ -111,3 +111,54 @@ pub fn get_page_image(path: &str, page_index: u32) -> Result<String, String> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_image_accepts_common_formats() {
+        assert!(is_image("page.jpg"));
+        assert!(is_image("page.jpeg"));
+        assert!(is_image("page.png"));
+        assert!(is_image("page.webp"));
+        assert!(is_image("page.gif"));
+    }
+
+    #[test]
+    fn is_image_case_insensitive() {
+        assert!(is_image("COVER.JPG"));
+        assert!(is_image("Cover.PNG"));
+    }
+
+    #[test]
+    fn is_image_rejects_non_images() {
+        assert!(!is_image("readme.txt"));
+        assert!(!is_image("data.xml"));
+        assert!(!is_image(""));
+    }
+
+    #[test]
+    fn mime_for_png() {
+        assert_eq!(mime_for("page.png"), "image/png");
+        assert_eq!(mime_for("page.PNG"), "image/png");
+    }
+
+    #[test]
+    fn mime_for_webp() {
+        assert_eq!(mime_for("page.webp"), "image/webp");
+    }
+
+    #[test]
+    fn mime_for_gif() {
+        assert_eq!(mime_for("page.gif"), "image/gif");
+    }
+
+    #[test]
+    fn mime_for_jpeg_default() {
+        assert_eq!(mime_for("page.jpg"), "image/jpeg");
+        assert_eq!(mime_for("page.jpeg"), "image/jpeg");
+        // Unknown extension defaults to jpeg
+        assert_eq!(mime_for("page.bmp"), "image/jpeg");
+    }
+}

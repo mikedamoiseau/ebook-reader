@@ -160,7 +160,13 @@ fn parse_feed(xml: &str, base_url: &str) -> Result<OpdsFeed, String> {
                                     || rel.contains("image")
                                     || (mime.starts_with("image/") && rel != "alternate")
                                 {
-                                    entry_cover = Some(href.clone());
+                                    // Upgrade http to https for CSP compatibility
+                                    let cover_href = if href.starts_with("http://") {
+                                        href.replacen("http://", "https://", 1)
+                                    } else {
+                                        href.clone()
+                                    };
+                                    entry_cover = Some(cover_href);
                                 }
                                 // Navigation (sub-catalog)
                                 if mime.contains("atom+xml")
@@ -245,6 +251,188 @@ fn parse_feed(xml: &str, base_url: &str) -> Result<OpdsFeed, String> {
         next_url,
         search_url,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_feed_basic_entry() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>Test Catalog</title>
+          <entry>
+            <id>urn:uuid:123</id>
+            <title>My Book</title>
+            <author><name>Jane Doe</name></author>
+            <summary>A great book</summary>
+            <link href="/download/book.epub" type="application/epub+zip" rel="http://opds-spec.org/acquisition"/>
+          </entry>
+        </feed>"#;
+
+        let feed = parse_feed(xml, "https://example.com/opds").unwrap();
+        assert_eq!(feed.title, "Test Catalog");
+        assert_eq!(feed.entries.len(), 1);
+
+        let entry = &feed.entries[0];
+        assert_eq!(entry.id, "urn:uuid:123");
+        assert_eq!(entry.title, "My Book");
+        assert_eq!(entry.author, "Jane Doe");
+        assert_eq!(entry.summary, "A great book");
+        assert_eq!(entry.links.len(), 1);
+        assert_eq!(entry.links[0].href, "https://example.com/download/book.epub");
+        assert_eq!(entry.links[0].mime_type, "application/epub+zip");
+    }
+
+    #[test]
+    fn parse_feed_relative_url_resolution() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>Test</title>
+          <entry>
+            <id>1</id>
+            <title>Book</title>
+            <link href="book.epub" type="application/epub+zip" rel="http://opds-spec.org/acquisition"/>
+          </entry>
+        </feed>"#;
+
+        let feed = parse_feed(xml, "https://example.com/catalog/root.xml").unwrap();
+        // Relative path should resolve against base directory
+        assert_eq!(feed.entries[0].links[0].href, "https://example.com/catalog/book.epub");
+    }
+
+    #[test]
+    fn parse_feed_absolute_path_resolution() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>Test</title>
+          <entry>
+            <id>1</id>
+            <title>Book</title>
+            <link href="/files/book.epub" type="application/epub+zip" rel="http://opds-spec.org/acquisition"/>
+          </entry>
+        </feed>"#;
+
+        let feed = parse_feed(xml, "https://example.com/catalog/root.xml").unwrap();
+        // Absolute path should use scheme+host only
+        assert_eq!(feed.entries[0].links[0].href, "https://example.com/files/book.epub");
+    }
+
+    #[test]
+    fn parse_feed_full_url_unchanged() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>Test</title>
+          <entry>
+            <id>1</id>
+            <title>Book</title>
+            <link href="https://cdn.example.com/book.epub" type="application/epub+zip" rel="http://opds-spec.org/acquisition"/>
+          </entry>
+        </feed>"#;
+
+        let feed = parse_feed(xml, "https://example.com/opds").unwrap();
+        assert_eq!(feed.entries[0].links[0].href, "https://cdn.example.com/book.epub");
+    }
+
+    #[test]
+    fn parse_feed_cover_http_upgraded_to_https() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>Test</title>
+          <entry>
+            <id>1</id>
+            <title>Book</title>
+            <link href="http://covers.example.com/cover.jpg" type="image/jpeg" rel="http://opds-spec.org/image/thumbnail"/>
+          </entry>
+        </feed>"#;
+
+        let feed = parse_feed(xml, "https://example.com/opds").unwrap();
+        // Cover URLs should be upgraded from http to https
+        assert_eq!(
+            feed.entries[0].cover_url.as_deref(),
+            Some("https://covers.example.com/cover.jpg")
+        );
+    }
+
+    #[test]
+    fn parse_feed_navigation_links() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>Root</title>
+          <entry>
+            <id>1</id>
+            <title>Science Fiction</title>
+            <link href="/catalog/scifi" type="application/atom+xml" rel="subsection"/>
+          </entry>
+        </feed>"#;
+
+        let feed = parse_feed(xml, "https://example.com/opds").unwrap();
+        assert!(feed.entries[0].nav_url.is_some());
+        assert_eq!(
+            feed.entries[0].nav_url.as_deref(),
+            Some("https://example.com/catalog/scifi")
+        );
+    }
+
+    #[test]
+    fn parse_feed_next_page_and_search() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>Catalog</title>
+          <link href="/opds?page=2" rel="next" type="application/atom+xml"/>
+          <link href="/search?q={searchTerms}" rel="search" type="application/opensearchdescription+xml"/>
+        </feed>"#;
+
+        let feed = parse_feed(xml, "https://example.com/opds").unwrap();
+        assert_eq!(feed.next_url.as_deref(), Some("https://example.com/opds?page=2"));
+        assert_eq!(
+            feed.search_url.as_deref(),
+            Some("https://example.com/search?q={searchTerms}")
+        );
+    }
+
+    #[test]
+    fn parse_feed_empty_feed() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>Empty</title>
+        </feed>"#;
+
+        let feed = parse_feed(xml, "https://example.com").unwrap();
+        assert_eq!(feed.title, "Empty");
+        assert!(feed.entries.is_empty());
+        assert!(feed.next_url.is_none());
+        assert!(feed.search_url.is_none());
+    }
+
+    #[test]
+    fn parse_feed_invalid_xml() {
+        let xml = "not xml at all <<<<";
+        assert!(parse_feed(xml, "https://example.com").is_err());
+    }
+
+    #[test]
+    fn parse_feed_multiple_entries() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>Books</title>
+          <entry>
+            <id>1</id><title>Book One</title>
+          </entry>
+          <entry>
+            <id>2</id><title>Book Two</title>
+          </entry>
+          <entry>
+            <id>3</id><title>Book Three</title>
+          </entry>
+        </feed>"#;
+
+        let feed = parse_feed(xml, "https://example.com").unwrap();
+        assert_eq!(feed.entries.len(), 3);
+        assert_eq!(feed.entries[0].title, "Book One");
+        assert_eq!(feed.entries[2].title, "Book Three");
+    }
 }
 
 /// Download a file from a URL to a local path.

@@ -10,6 +10,7 @@ use crate::models::{
     NewRuleInput, ReadingProgress,
 };
 use crate::opds;
+use crate::openlibrary;
 use crate::pdf;
 
 pub struct AppState {
@@ -183,6 +184,11 @@ pub async fn import_book(
                     .as_secs() as i64,
                 format,
                 file_hash: Some(hash),
+                description: None,
+                genres: None,
+                rating: None,
+                isbn: None,
+                openlibrary_key: None,
             }
         }
         BookFormat::Cbz => {
@@ -216,6 +222,11 @@ pub async fn import_book(
                     .as_secs() as i64,
                 format,
                 file_hash: Some(hash),
+                description: None,
+                genres: None,
+                rating: None,
+                isbn: None,
+                openlibrary_key: None,
             }
         }
         BookFormat::Cbr => {
@@ -249,6 +260,11 @@ pub async fn import_book(
                     .as_secs() as i64,
                 format,
                 file_hash: Some(hash),
+                description: None,
+                genres: None,
+                rating: None,
+                isbn: None,
+                openlibrary_key: None,
             }
         }
         BookFormat::Pdf => {
@@ -293,6 +309,11 @@ pub async fn import_book(
                     .as_secs() as i64,
                 format,
                 file_hash: Some(hash),
+                description: None,
+                genres: None,
+                rating: None,
+                isbn: None,
+                openlibrary_key: None,
             }
         }
     };
@@ -968,6 +989,89 @@ pub async fn export_collection_json(
     serde_json::to_string_pretty(&export).map_err(|e| e.to_string())
 }
 
+// --- OpenLibrary ---
+
+#[tauri::command]
+pub async fn search_openlibrary(
+    title: String,
+    author: Option<String>,
+) -> Result<Vec<openlibrary::OpenLibraryResult>, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(openlibrary::search(&title, author.as_deref()));
+    });
+    rx.recv().map_err(|e| format!("Thread error: {e}"))?
+}
+
+#[tauri::command]
+pub async fn enrich_book_from_openlibrary(
+    book_id: String,
+    openlibrary_key: String,
+    state: State<'_, AppState>,
+) -> Result<Book, String> {
+    // Fetch detailed metadata from OpenLibrary (on a separate thread)
+    let key = openlibrary_key.clone();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(openlibrary::get_work(&key));
+    });
+    let work = rx.recv().map_err(|e| format!("Thread error: {e}"))??;
+
+    // Also get search result for rating/isbn (work endpoint doesn't have them)
+    let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
+    let mut book = db::get_book(&conn, &book_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Book '{book_id}' not found"))?;
+
+    // Do a quick search to get rating and ISBN
+    let search_title = book.title.clone();
+    let search_author = if book.author.is_empty() {
+        None
+    } else {
+        Some(book.author.clone())
+    };
+    let (tx2, rx2) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx2.send(openlibrary::search(&search_title, search_author.as_deref()));
+    });
+    let search_results = rx2
+        .recv()
+        .map_err(|e| format!("Thread error: {e}"))?
+        .unwrap_or_default();
+    let matched = search_results.iter().find(|r| r.key == openlibrary_key);
+
+    // Update book with enriched data
+    let description = work
+        .description
+        .or_else(|| matched.and_then(|m| m.description.clone()));
+    let genres = if !work.genres.is_empty() {
+        Some(serde_json::to_string(&work.genres).unwrap_or_default())
+    } else {
+        matched.map(|m| serde_json::to_string(&m.genres).unwrap_or_default())
+    };
+    let rating = matched.and_then(|m| m.rating);
+    let isbn = matched.and_then(|m| m.isbn.clone());
+
+    db::update_book_enrichment(
+        &conn,
+        &book_id,
+        description.as_deref(),
+        genres.as_deref(),
+        rating,
+        isbn.as_deref(),
+        Some(&openlibrary_key),
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Return updated book
+    book.description = description;
+    book.genres = genres;
+    book.rating = rating;
+    book.isbn = isbn;
+    book.openlibrary_key = Some(openlibrary_key);
+    Ok(book)
+}
+
 // --- OPDS Catalog ---
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -1548,4 +1652,70 @@ pub async fn get_pdf_page(
             .file_path
     };
     pdf::get_page_image(&file_path, page_index, 1200)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_cover_png_data_uri() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_uri = "data:image/png;base64,iVBORw0KGgo=";
+        let result = save_cover_from_data_uri(data_uri, dir.path(), "book-123");
+        assert!(result.is_some());
+        let path = result.unwrap();
+        assert!(path.contains("cover.png"));
+        assert!(std::path::Path::new(&path).exists());
+    }
+
+    #[test]
+    fn save_cover_jpeg_data_uri() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_uri = "data:image/jpeg;base64,/9j/4AAQ";
+        let result = save_cover_from_data_uri(data_uri, dir.path(), "book-456");
+        assert!(result.is_some());
+        let path = result.unwrap();
+        assert!(path.contains("cover.jpg"));
+    }
+
+    #[test]
+    fn save_cover_webp_data_uri() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_uri = "data:image/webp;base64,UklGRg==";
+        let result = save_cover_from_data_uri(data_uri, dir.path(), "book-789");
+        assert!(result.is_some());
+        let path = result.unwrap();
+        assert!(path.contains("cover.webp"));
+    }
+
+    #[test]
+    fn save_cover_invalid_data_uri_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        // Missing data: prefix
+        assert!(save_cover_from_data_uri("not-a-data-uri", dir.path(), "book").is_none());
+        // Missing ;base64
+        assert!(save_cover_from_data_uri("data:image/png,abc", dir.path(), "book").is_none());
+        // Missing comma
+        assert!(save_cover_from_data_uri("data:image/png;base64", dir.path(), "book").is_none());
+    }
+
+    #[test]
+    fn save_cover_creates_directory_structure() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_uri = "data:image/gif;base64,R0lGODlh";
+        let result = save_cover_from_data_uri(data_uri, dir.path(), "new-book");
+        assert!(result.is_some());
+        // Verify the covers/new-book/ directory was created
+        assert!(dir.path().join("covers").join("new-book").exists());
+    }
+
+    #[test]
+    fn save_cover_unknown_mime_defaults_to_jpg() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_uri = "data:image/bmp;base64,Qk0=";
+        let result = save_cover_from_data_uri(data_uri, dir.path(), "book");
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("cover.jpg"));
+    }
 }

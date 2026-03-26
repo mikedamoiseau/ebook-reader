@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { formatDuration } from "../lib/utils";
 
 interface ReadingStatsData {
   totalReadingTimeSecs: number;
@@ -13,15 +14,6 @@ interface ReadingStatsData {
 
 interface ReadingStatsProps {
   onClose: () => void;
-}
-
-function formatDuration(secs: number): string {
-  if (secs < 60) return `${secs}s`;
-  const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}m`;
-  const hrs = Math.floor(mins / 60);
-  const remMins = mins % 60;
-  return remMins > 0 ? `${hrs}h ${remMins}m` : `${hrs}h`;
 }
 
 export default function ReadingStats({ onClose }: ReadingStatsProps) {

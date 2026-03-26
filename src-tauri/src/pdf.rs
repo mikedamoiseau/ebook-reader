@@ -121,3 +121,34 @@ pub fn get_page_image(path: &str, page_index: u32, width: u32) -> Result<String,
     let b64 = base64::engine::general_purpose::STANDARD.encode(&png_bytes);
     Ok(format!("data:image/png;base64,{b64}"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filename_stem_normal_path() {
+        assert_eq!(filename_stem("/home/user/docs/book.pdf"), "book");
+    }
+
+    #[test]
+    fn filename_stem_no_extension() {
+        assert_eq!(filename_stem("/home/user/docs/readme"), "readme");
+    }
+
+    #[test]
+    fn filename_stem_multiple_dots() {
+        assert_eq!(filename_stem("/path/to/my.great.book.pdf"), "my.great.book");
+    }
+
+    #[test]
+    fn filename_stem_just_filename() {
+        assert_eq!(filename_stem("document.pdf"), "document");
+    }
+
+    #[test]
+    fn filename_stem_empty_string() {
+        // Empty path has no stem — should fall back to "Unknown"
+        assert_eq!(filename_stem(""), "Unknown");
+    }
+}

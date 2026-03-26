@@ -45,6 +45,11 @@ pub struct Book {
     pub added_at: i64,
     pub format: BookFormat,
     pub file_hash: Option<String>,
+    pub description: Option<String>,
+    pub genres: Option<String>, // JSON array string
+    pub rating: Option<f64>,
+    pub isbn: Option<String>,
+    pub openlibrary_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,4 +120,61 @@ pub struct Collection {
     pub created_at: i64,
     pub updated_at: i64,
     pub rules: Vec<CollectionRule>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn book_format_display() {
+        assert_eq!(BookFormat::Epub.to_string(), "epub");
+        assert_eq!(BookFormat::Cbz.to_string(), "cbz");
+        assert_eq!(BookFormat::Cbr.to_string(), "cbr");
+        assert_eq!(BookFormat::Pdf.to_string(), "pdf");
+    }
+
+    #[test]
+    fn book_format_from_str_valid() {
+        assert_eq!("epub".parse::<BookFormat>().unwrap(), BookFormat::Epub);
+        assert_eq!("cbz".parse::<BookFormat>().unwrap(), BookFormat::Cbz);
+        assert_eq!("cbr".parse::<BookFormat>().unwrap(), BookFormat::Cbr);
+        assert_eq!("pdf".parse::<BookFormat>().unwrap(), BookFormat::Pdf);
+    }
+
+    #[test]
+    fn book_format_from_str_invalid() {
+        let err = "mobi".parse::<BookFormat>().unwrap_err();
+        assert!(err.contains("unknown book format"));
+        assert!(err.contains("mobi"));
+    }
+
+    #[test]
+    fn book_format_from_str_case_sensitive() {
+        // FromStr is case-sensitive — uppercase should fail
+        assert!("EPUB".parse::<BookFormat>().is_err());
+        assert!("Pdf".parse::<BookFormat>().is_err());
+    }
+
+    #[test]
+    fn book_format_serde_roundtrip() {
+        let format = BookFormat::Epub;
+        let json = serde_json::to_string(&format).unwrap();
+        assert_eq!(json, "\"epub\"");
+        let back: BookFormat = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, BookFormat::Epub);
+    }
+
+    #[test]
+    fn book_format_serde_all_variants() {
+        for (variant, expected) in [
+            (BookFormat::Epub, "\"epub\""),
+            (BookFormat::Cbz, "\"cbz\""),
+            (BookFormat::Cbr, "\"cbr\""),
+            (BookFormat::Pdf, "\"pdf\""),
+        ] {
+            let json = serde_json::to_string(&variant).unwrap();
+            assert_eq!(json, expected);
+        }
+    }
 }

@@ -33,6 +33,7 @@ fn open_archive(path: &str) -> Result<ZipArchive<std::fs::File>, String> {
     ZipArchive::new(file).map_err(|e| format!("Not a valid ZIP/CBZ archive: {e}"))
 }
 
+#[derive(Debug)]
 pub struct CbzMeta {
     pub title: String,
     pub page_count: u32,
@@ -101,4 +102,135 @@ pub fn get_page_image(path: &str, page_index: u32) -> Result<String, String> {
 
     let encoded = general_purpose::STANDARD.encode(&data);
     Ok(format!("data:{mime};base64,{encoded}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn is_image_accepts_common_formats() {
+        assert!(is_image("page01.jpg"));
+        assert!(is_image("page02.jpeg"));
+        assert!(is_image("page03.png"));
+        assert!(is_image("page04.webp"));
+        assert!(is_image("page05.gif"));
+    }
+
+    #[test]
+    fn is_image_case_insensitive() {
+        assert!(is_image("cover.JPG"));
+        assert!(is_image("cover.PNG"));
+        assert!(is_image("cover.Webp"));
+    }
+
+    #[test]
+    fn is_image_rejects_non_images() {
+        assert!(!is_image("readme.txt"));
+        assert!(!is_image("metadata.xml"));
+        assert!(!is_image("comic.cbz"));
+        assert!(!is_image(""));
+    }
+
+    #[test]
+    fn collect_image_names_filters_and_sorts() {
+        // Create a temp CBZ with known contents
+        let dir = tempfile::tempdir().unwrap();
+        let cbz_path = dir.path().join("test.cbz");
+        {
+            let file = std::fs::File::create(&cbz_path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let options = zip::write::SimpleFileOptions::default();
+
+            // Add images in unsorted order
+            zip.start_file("page03.jpg", options).unwrap();
+            zip.write_all(b"fake jpg 3").unwrap();
+            zip.start_file("page01.jpg", options).unwrap();
+            zip.write_all(b"fake jpg 1").unwrap();
+            zip.start_file("page02.png", options).unwrap();
+            zip.write_all(b"fake png 2").unwrap();
+
+            // Add non-image and macOS junk
+            zip.start_file("__MACOSX/.DS_Store", options).unwrap();
+            zip.write_all(b"junk").unwrap();
+            zip.start_file("metadata.xml", options).unwrap();
+            zip.write_all(b"<xml/>").unwrap();
+
+            zip.finish().unwrap();
+        }
+
+        let mut archive = open_archive(cbz_path.to_str().unwrap()).unwrap();
+        let names = collect_image_names(&mut archive);
+
+        assert_eq!(names, vec!["page01.jpg", "page02.png", "page03.jpg"]);
+    }
+
+    #[test]
+    fn import_cbz_extracts_title_from_filename() {
+        let dir = tempfile::tempdir().unwrap();
+        let cbz_path = dir.path().join("My Comic Book.cbz");
+        {
+            let file = std::fs::File::create(&cbz_path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let options = zip::write::SimpleFileOptions::default();
+            zip.start_file("page01.jpg", options).unwrap();
+            zip.write_all(b"fake").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let meta = import_cbz(cbz_path.to_str().unwrap()).unwrap();
+        assert_eq!(meta.title, "My Comic Book");
+        assert_eq!(meta.page_count, 1);
+    }
+
+    #[test]
+    fn import_cbz_empty_archive_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let cbz_path = dir.path().join("empty.cbz");
+        {
+            let file = std::fs::File::create(&cbz_path).unwrap();
+            let zip = zip::ZipWriter::new(file);
+            zip.finish().unwrap();
+        }
+
+        let result = import_cbz(cbz_path.to_str().unwrap());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("no supported image files"));
+    }
+
+    #[test]
+    fn get_page_image_returns_data_uri() {
+        let dir = tempfile::tempdir().unwrap();
+        let cbz_path = dir.path().join("test.cbz");
+        {
+            let file = std::fs::File::create(&cbz_path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let options = zip::write::SimpleFileOptions::default();
+            zip.start_file("page01.png", options).unwrap();
+            zip.write_all(b"fake png data").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let uri = get_page_image(cbz_path.to_str().unwrap(), 0).unwrap();
+        assert!(uri.starts_with("data:image/png;base64,"));
+    }
+
+    #[test]
+    fn get_page_image_out_of_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let cbz_path = dir.path().join("test.cbz");
+        {
+            let file = std::fs::File::create(&cbz_path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let options = zip::write::SimpleFileOptions::default();
+            zip.start_file("page01.jpg", options).unwrap();
+            zip.write_all(b"fake").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let result = get_page_image(cbz_path.to_str().unwrap(), 5);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("out of range"));
+    }
 }
