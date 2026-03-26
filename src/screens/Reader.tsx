@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
-import DOMPurify from "dompurify";
 import { useTheme, MIN_FONT_SIZE, MAX_FONT_SIZE } from "../context/ThemeContext";
 import PageViewer from "../components/PageViewer";
 import KeyboardShortcutsHelp from "../components/KeyboardShortcutsHelp";
@@ -326,7 +325,7 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
   // Inject highlight <mark> tags into the sanitized HTML string.
   // This survives React re-renders (unlike DOM manipulation).
   const highlightedHtml = useMemo(() => {
-    const html = DOMPurify.sanitize(chapterHtml);
+    const html = chapterHtml;
     if (highlights.length === 0) return html;
 
     // Walk the HTML string, tracking text offset (skip inside tags).
