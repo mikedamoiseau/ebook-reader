@@ -63,6 +63,7 @@ export default function Library() {
   // Discover — popular/new books from catalogs (loaded lazily, cached 24h)
   interface DiscoverEntry { id: string; title: string; author: string; summary: string; coverUrl: string | null; links: { href: string; mimeType: string; rel: string }[]; navUrl: string | null }
   const [discoverBooks, setDiscoverBooks] = useState<DiscoverEntry[]>([]);
+  const [discoverLoading, setDiscoverLoading] = useState(true);
 
   // Collections state
   const [collectionsOpen, setCollectionsOpen] = useState(false);
@@ -140,9 +141,11 @@ export default function Library() {
   useEffect(() => {
     if (!loaded) return;
     let cancelled = false;
+    setDiscoverLoading(true);
     invoke<DiscoverEntry[]>("get_discover_books")
       .then((entries) => { if (!cancelled) setDiscoverBooks(entries); })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setDiscoverLoading(false); });
     return () => { cancelled = true; };
   }, [loaded]);
 
@@ -588,10 +591,23 @@ export default function Library() {
             </div>
           )}
           {/* Discover — popular/new from catalogs */}
-          {!search && !activeCollectionId && discoverBooks.length > 0 && (
+          {!search && !activeCollectionId && (discoverLoading || discoverBooks.length > 0) && (
             <div className="mb-6">
               <h2 className="text-sm font-semibold text-ink-muted uppercase tracking-wide mb-3">Discover</h2>
               <div className="flex gap-4 overflow-x-auto pb-2">
+                {discoverLoading && discoverBooks.length === 0 && (
+                  <>
+                    {[0, 1, 2].map((i) => (
+                      <div key={i} className="shrink-0 w-28 rounded-lg overflow-hidden bg-surface border border-warm-border animate-pulse">
+                        <div className="aspect-[2/3] bg-warm-subtle" />
+                        <div className="px-2 py-2 space-y-1.5">
+                          <div className="h-3 bg-warm-subtle rounded w-4/5" />
+                          <div className="h-2.5 bg-warm-subtle rounded w-3/5" />
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
                 {discoverBooks.map((entry) => {
                   const epubLink = entry.links.find((l) => l.mimeType.includes("epub"));
                   const pdfLink = entry.links.find((l) => l.mimeType.includes("pdf"));
