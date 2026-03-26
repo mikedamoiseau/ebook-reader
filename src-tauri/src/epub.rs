@@ -47,6 +47,8 @@ pub struct BookMetadata {
     pub author: String,
     pub language: String,
     pub description: Option<String>,
+    pub isbn: Option<String>,
+    pub genres: Vec<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -382,11 +384,24 @@ pub fn parse_epub_metadata(file_path: &str) -> Result<BookMetadata, EpubError> {
         .or_else(|| extract_tag_text(&opf, "description"))
         .map(|s| s.to_string());
 
+    let isbn = extract_all_tag_texts(&opf, "dc:identifier")
+        .iter()
+        .chain(extract_all_tag_texts(&opf, "identifier").iter())
+        .find_map(|id| crate::enrichment::extract_isbn(id));
+
+    let genres = {
+        let mut subjects = extract_all_tag_texts(&opf, "dc:subject");
+        subjects.extend(extract_all_tag_texts(&opf, "subject"));
+        subjects
+    };
+
     Ok(BookMetadata {
         title,
         author,
         language,
         description,
+        isbn,
+        genres,
     })
 }
 

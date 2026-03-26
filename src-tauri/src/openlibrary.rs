@@ -139,6 +139,45 @@ pub fn get_work(key: &str) -> Result<OpenLibraryResult, String> {
     })
 }
 
+/// Look up a book by ISBN. Returns the work data if found.
+pub fn lookup_isbn(isbn: &str) -> Result<OpenLibraryResult, String> {
+    let url = format!("https://openlibrary.org/isbn/{}.json", isbn);
+    let resp = reqwest::blocking::get(&url).map_err(|e| format!("ISBN lookup failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("ISBN not found: HTTP {}", resp.status()));
+    }
+    let doc: serde_json::Value = resp.json().map_err(|e| format!("JSON parse error: {e}"))?;
+    let title = doc["title"].as_str().unwrap_or("").to_string();
+    let work_key = doc["works"]
+        .as_array()
+        .and_then(|a| a.first())
+        .and_then(|w| w["key"].as_str())
+        .map(|s| s.to_string());
+    if let Some(ref key) = work_key {
+        if let Ok(mut work) = get_work(key) {
+            if work.title.is_empty() {
+                work.title = title;
+            }
+            work.isbn = Some(isbn.to_string());
+            return Ok(work);
+        }
+    }
+    Ok(OpenLibraryResult {
+        key: work_key.unwrap_or_default(),
+        title,
+        author: doc["by_statement"].as_str().unwrap_or("").to_string(),
+        description: None,
+        genres: Vec::new(),
+        rating: None,
+        isbn: Some(isbn.to_string()),
+        cover_url: doc["covers"]
+            .as_array()
+            .and_then(|a| a.first())
+            .and_then(|v| v.as_i64())
+            .map(|id| format!("https://covers.openlibrary.org/b/id/{}-L.jpg", id)),
+    })
+}
+
 fn urlencoding(s: &str) -> String {
     s.replace(' ', "+")
         .replace('&', "%26")
