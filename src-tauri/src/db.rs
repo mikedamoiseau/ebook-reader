@@ -2,6 +2,7 @@ use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, Connection, Result};
 use std::path::Path;
+use std::time::Duration;
 
 use crate::models::{Book, Bookmark, Collection, CollectionRule, CollectionType, ReadingProgress};
 
@@ -151,7 +152,10 @@ pub fn create_pool(db_path: &Path) -> Result<DbPool, Box<dyn std::error::Error>>
     let manager = SqliteConnectionManager::file(db_path)
         .with_init(|conn| conn.execute_batch("PRAGMA foreign_keys = ON;"));
 
-    let pool = Pool::new(manager)?;
+    let pool = Pool::builder()
+        .max_size(5)
+        .connection_timeout(Duration::from_secs(5))
+        .build(manager)?;
 
     // Run schema migrations on startup using a pool connection.
     let conn = pool.get()?;
