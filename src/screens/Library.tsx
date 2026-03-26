@@ -12,6 +12,7 @@ import CollectionsSidebar, {
   CreateCollectionData,
 } from "../components/CollectionsSidebar";
 import EditBookDialog from "../components/EditBookDialog";
+import BookDetailModal from "../components/BookDetailModal";
 import KeyboardShortcutsHelp from "../components/KeyboardShortcutsHelp";
 import { startDrag, endDrag, isDragging, getDraggedCoverSrc, subscribe } from "../lib/dragState";
 import { friendlyError } from "../lib/errors";
@@ -61,6 +62,7 @@ export default function Library() {
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
   const importCancelledRef = useRef(false);
   const [editingBook, setEditingBook] = useState<Book | null>(null);
+  const [detailBook, setDetailBook] = useState<Book | null>(null);
   const [scanningBookId, setScanningBookId] = useState<string | null>(null);
   const [scanToast, setScanToast] = useState<{ message: string; isError: boolean } | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -741,11 +743,19 @@ export default function Library() {
                   totalChapters={book.total_chapters}
                   format={book.format}
                   progress={progressMap[book.id] ?? 0}
+                  language={book.language}
+                  publishYear={book.publish_year}
+                  series={book.series}
+                  volume={book.volume}
                   onClick={() => navigate(`/reader/${book.id}`)}
                   onDelete={handleRemoveBook}
                   onEdit={(id) => {
                     const book = books.find((b) => b.id === id);
                     if (book) setEditingBook(book);
+                  }}
+                  onInfo={(id) => {
+                    const book = books.find((b) => b.id === id);
+                    if (book) setDetailBook(book);
                   }}
                   onRemoveFromCollection={
                     isManualCollectionView && activeCollectionId
@@ -880,6 +890,22 @@ export default function Library() {
       {/* Keyboard shortcuts help */}
       {showShortcuts && (
         <KeyboardShortcutsHelp context="library" onClose={() => setShowShortcuts(false)} />
+      )}
+
+      {detailBook && (
+        <BookDetailModal
+          book={detailBook}
+          onClose={() => setDetailBook(null)}
+          onOpen={(id) => {
+            setDetailBook(null);
+            navigate(`/reader/${id}`);
+          }}
+          onEdit={(id) => {
+            setDetailBook(null);
+            const book = books.find((b) => b.id === id);
+            if (book) setEditingBook(book);
+          }}
+        />
       )}
 
       {/* Edit book dialog */}
