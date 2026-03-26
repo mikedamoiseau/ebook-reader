@@ -36,9 +36,10 @@ interface BookInfo {
 
 interface ReaderProps {
   onOpenSettings: () => void;
+  settingsOpen?: boolean;
 }
 
-export default function Reader({ onOpenSettings }: ReaderProps) {
+export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderProps) {
   const { bookId } = useParams<{ bookId: string }>();
   const navigate = useNavigate();
   const { fontSize, setFontSize, fontFamily } = useTheme();
@@ -72,7 +73,7 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
   const [bottomNavVisible, setBottomNavVisible] = useState(true);
   const sessionStartRef = useRef<number>(Math.floor(Date.now() / 1000));
   const startChapterRef = useRef<number>(0);
-  const restoringScroll = useRef(false);
+  const restoringScroll = useRef<number | null>(null);
   const savedScrollPosition = useRef<number | null>(null);
 
   // ---- Load book info, TOC, and saved progress on mount ----
@@ -118,7 +119,7 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
           if (!cancelled && progress) {
             setChapterIndex(progress.chapter_index);
             savedScrollPosition.current = progress.scroll_position;
-            restoringScroll.current = true;
+            restoringScroll.current = progress.chapter_index;
           }
         } catch {
           // No saved progress — start at chapter 0
@@ -156,7 +157,7 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
         if (!cancelled) {
           setChapterHtml(html);
           setChapterError(null);
-          if (!restoringScroll.current && scrollContainerRef.current) {
+          if (restoringScroll.current !== chapterIndex && scrollContainerRef.current) {
             scrollContainerRef.current.scrollTop = 0;
           }
         }
@@ -176,21 +177,21 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
   // ---- Restore scroll position after chapter HTML renders ----
 
   useEffect(() => {
-    if (!restoringScroll.current || !chapterHtml || !bookId) return;
+    if (restoringScroll.current !== chapterIndex || !chapterHtml || !bookId) return;
 
     const scrollPos = savedScrollPosition.current;
     if (scrollPos !== null && scrollContainerRef.current) {
       const container = scrollContainerRef.current;
       requestAnimationFrame(() => {
         container.scrollTop = scrollPos * container.scrollHeight;
-        restoringScroll.current = false;
+        restoringScroll.current = null;
         savedScrollPosition.current = null;
       });
     } else {
-      restoringScroll.current = false;
+      restoringScroll.current = null;
       savedScrollPosition.current = null;
     }
-  }, [chapterHtml, bookId]);
+  }, [chapterHtml, bookId, chapterIndex]);
 
   // ---- Save reading progress ----
 
@@ -222,7 +223,7 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
     if (!container) return;
 
     function handleScroll() {
-      if (!container || restoringScroll.current) return;
+      if (!container || restoringScroll.current === chapterIndex) return;
       const { scrollTop, scrollHeight, clientHeight } = container;
       const maxScroll = scrollHeight - clientHeight;
       const progress = maxScroll > 0 ? scrollTop / maxScroll : 0;
@@ -231,7 +232,7 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
 
     container.addEventListener("scroll", handleScroll, { passive: true });
     return () => container.removeEventListener("scroll", handleScroll);
-  }, [chapterHtml]);
+  }, [chapterHtml, chapterIndex]);
 
   useEffect(() => {
     startChapterRef.current = chapterIndex;
@@ -453,6 +454,12 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
 
+      // Let SettingsPanel handle Escape and Tab when it is open
+      if (settingsOpen && (e.key === "Escape" || e.key === "Tab")) return;
+
+      // Don't navigate chapters when any panel is open
+      if ((settingsOpen || tocOpen) && (e.key === "ArrowLeft" || e.key === "ArrowRight")) return;
+
       if (e.key === "ArrowLeft") {
         prevChapter();
       } else if (e.key === "ArrowRight") {
@@ -475,7 +482,7 @@ export default function Reader({ onOpenSettings }: ReaderProps) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [prevChapter, nextChapter, addBookmarkAtCurrentPosition, showShortcuts, tocOpen, navigate]);
+  }, [prevChapter, nextChapter, addBookmarkAtCurrentPosition, showShortcuts, tocOpen, dndMode, settingsOpen, navigate]);
 
   // ---- Track bottom nav visibility for floating arrows ----
 
