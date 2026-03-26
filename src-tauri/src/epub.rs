@@ -1259,4 +1259,146 @@ mod tests {
         assert_eq!(sanitize_cover_ext(".."), "jpg");
         assert_eq!(sanitize_cover_ext("jpg.exe"), "jpg");
     }
+
+    /// Helper to create a zip archive with an image entry for testing.
+    fn create_test_zip_with_image(
+        dir: &std::path::Path,
+        zip_name: &str,
+        image_path: &str,
+        image_bytes: &[u8],
+    ) -> String {
+        let zip_path = dir.join(zip_name);
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        writer.start_file(image_path, options).unwrap();
+        std::io::Write::write_all(&mut writer, image_bytes).unwrap();
+        writer.finish().unwrap();
+        zip_path.to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn test_rewrite_img_srcs_produces_asset_urls() {
+        let tmp = tempfile::tempdir().unwrap();
+        let zip_path = create_test_zip_with_image(
+            tmp.path(),
+            "test.zip",
+            "OEBPS/images/photo.jpg",
+            &[0xFF, 0xD8, 0xFF, 0xE0], // JPEG magic bytes
+        );
+
+        let file = std::fs::File::open(&zip_path).unwrap();
+        let mut archive = ZipArchive::new(file).unwrap();
+        let image_dir = tmp.path().join("images").join("book1").join("0");
+        let image_dir_str = image_dir.to_string_lossy().to_string();
+
+        let html = r#"<p>Text</p><img src="../images/photo.jpg"/><p>More</p>"#;
+        let result =
+            rewrite_img_srcs_to_asset_urls(html, &mut archive, "OEBPS/Text/", &image_dir_str);
+
+        assert!(
+            result.contains("asset://localhost/"),
+            "should contain asset URL, got: {result}"
+        );
+        assert!(
+            !result.contains("data:"),
+            "should not contain data URI, got: {result}"
+        );
+        assert!(
+            result.contains("photo.jpg"),
+            "should reference the image filename"
+        );
+        // Verify image was written to disk
+        assert!(image_dir.join("photo.jpg").exists());
+    }
+
+    #[test]
+    fn test_rewrite_img_srcs_caches_images_idempotent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let zip_path = create_test_zip_with_image(
+            tmp.path(),
+            "test.zip",
+            "images/icon.png",
+            &[0x89, 0x50, 0x4E, 0x47], // PNG magic bytes
+        );
+
+        let image_dir = tmp.path().join("images").join("book1").join("0");
+        let image_dir_str = image_dir.to_string_lossy().to_string();
+        let html = r#"<img src="images/icon.png"/>"#;
+
+        // First call: extracts image
+        {
+            let file = std::fs::File::open(&zip_path).unwrap();
+            let mut archive = ZipArchive::new(file).unwrap();
+            rewrite_img_srcs_to_asset_urls(html, &mut archive, "", &image_dir_str);
+        }
+        let dest = image_dir.join("icon.png");
+        assert!(dest.exists());
+        let mtime_first = std::fs::metadata(&dest).unwrap().modified().unwrap();
+
+        // Small delay to ensure filesystem time resolution
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Second call: should skip extraction (file already cached)
+        {
+            let file = std::fs::File::open(&zip_path).unwrap();
+            let mut archive = ZipArchive::new(file).unwrap();
+            rewrite_img_srcs_to_asset_urls(html, &mut archive, "", &image_dir_str);
+        }
+        let mtime_second = std::fs::metadata(&dest).unwrap().modified().unwrap();
+        assert_eq!(
+            mtime_first, mtime_second,
+            "cached file should not be rewritten"
+        );
+    }
+
+    #[test]
+    fn test_rewrite_img_srcs_leaves_external_urls_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let zip_path = create_test_zip_with_image(tmp.path(), "test.zip", "img.jpg", &[0xFF]);
+
+        let file = std::fs::File::open(&zip_path).unwrap();
+        let mut archive = ZipArchive::new(file).unwrap();
+        let image_dir = tmp.path().join("out");
+        let image_dir_str = image_dir.to_string_lossy().to_string();
+
+        let html =
+            r#"<img src="https://example.com/photo.jpg"/><img src="data:image/png;base64,abc"/>"#;
+        let result = rewrite_img_srcs_to_asset_urls(html, &mut archive, "", &image_dir_str);
+
+        assert_eq!(result, html, "external URLs should be unchanged");
+    }
+
+    #[test]
+    fn test_rewrite_img_srcs_skips_svg() {
+        let tmp = tempfile::tempdir().unwrap();
+        let zip_path = create_test_zip_with_image(tmp.path(), "test.zip", "icon.svg", b"<svg/>");
+
+        let file = std::fs::File::open(&zip_path).unwrap();
+        let mut archive = ZipArchive::new(file).unwrap();
+        let image_dir = tmp.path().join("out");
+        let image_dir_str = image_dir.to_string_lossy().to_string();
+
+        let html = r#"<img src="icon.svg"/>"#;
+        let result = rewrite_img_srcs_to_asset_urls(html, &mut archive, "", &image_dir_str);
+
+        assert_eq!(result, html, "SVG images should be left as-is");
+    }
+
+    #[test]
+    fn test_rewrite_img_srcs_missing_image_leaves_tag_unchanged() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Create zip without the referenced image
+        let zip_path = create_test_zip_with_image(tmp.path(), "test.zip", "other.jpg", &[0xFF]);
+
+        let file = std::fs::File::open(&zip_path).unwrap();
+        let mut archive = ZipArchive::new(file).unwrap();
+        let image_dir = tmp.path().join("out");
+        let image_dir_str = image_dir.to_string_lossy().to_string();
+
+        let html = r#"<img src="missing.jpg"/>"#;
+        let result = rewrite_img_srcs_to_asset_urls(html, &mut archive, "", &image_dir_str);
+
+        assert_eq!(result, html, "missing images should leave tag unchanged");
+    }
 }

@@ -407,6 +407,12 @@ pub async fn remove_book(book_id: String, state: State<'_, AppState>) -> Result<
         }
     }
 
+    // Clean up extracted image cache for this book.
+    let image_cache_dir = state.data_dir.join("images").join(&book_id);
+    if image_cache_dir.exists() {
+        let _ = std::fs::remove_dir_all(&image_cache_dir);
+    }
+
     Ok(())
 }
 
