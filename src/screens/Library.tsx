@@ -12,6 +12,7 @@ import CollectionsSidebar, {
 } from "../components/CollectionsSidebar";
 import EditBookDialog from "../components/EditBookDialog";
 import KeyboardShortcutsHelp from "../components/KeyboardShortcutsHelp";
+import { startDrag, endDrag } from "../lib/dragState";
 
 interface Book {
   id: string;
@@ -49,7 +50,6 @@ export default function Library() {
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const internalDragRef = useRef(false);
   const [loaded, setLoaded] = useState(false);
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
   const importCancelledRef = useRef(false);
@@ -242,8 +242,6 @@ export default function Library() {
 
     getCurrentWebview()
       .onDragDropEvent(async (event) => {
-        // Ignore Tauri drag events when dragging book cards internally
-        if (internalDragRef.current) return;
         const { type } = event.payload;
         if (type === "enter") {
           setDragging(true);
@@ -558,15 +556,8 @@ export default function Library() {
             {filtered.map((book) => (
               <div
                 key={book.id}
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData("text/plain", book.id);
-                  e.dataTransfer.effectAllowed = "copy";
-                  internalDragRef.current = true;
-                }}
-                onDragEnd={() => {
-                  internalDragRef.current = false;
-                }}
+                onMouseDown={() => startDrag(book.id)}
+                onMouseUp={() => endDrag()}
               >
                 <BookCard
                   id={book.id}

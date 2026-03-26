@@ -1,6 +1,7 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
+import { getDraggedBookId, endDrag } from "../lib/dragState";
 
 // ---- Types ----
 
@@ -100,39 +101,14 @@ function CollectionRow({
   isManual: boolean;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const dragCounter = useRef(0);
-  const [isDragOver, setIsDragOver] = useState(false);
 
-  const handleDragEnter = (e: React.DragEvent) => {
+  const handleMouseUp = () => {
     if (!isManual) return;
-    e.preventDefault();
-    dragCounter.current++;
-    setIsDragOver(true);
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    if (!isManual) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-  };
-
-  const handleDragLeave = () => {
-    if (!isManual) return;
-    dragCounter.current--;
-    if (dragCounter.current <= 0) {
-      dragCounter.current = 0;
-      setIsDragOver(false);
+    const bookId = getDraggedBookId();
+    if (bookId) {
+      endDrag();
+      onDropBook(bookId, collection.id);
     }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    if (!isManual) return;
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounter.current = 0;
-    setIsDragOver(false);
-    const bookId = e.dataTransfer.getData("text/plain");
-    if (bookId) onDropBook(bookId, collection.id);
   };
 
   if (confirmDelete) {
@@ -160,15 +136,10 @@ function CollectionRow({
       className={`group relative flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
         isActive
           ? "bg-accent-light text-accent"
-          : isDragOver && isManual
-          ? "bg-accent-light ring-1 ring-inset ring-accent"
           : "text-ink-muted hover:text-ink hover:bg-warm-subtle"
       }`}
       onClick={onSelect}
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      onMouseUp={handleMouseUp}
     >
       {/* Color swatch */}
       <span
