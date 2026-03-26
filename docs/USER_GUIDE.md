@@ -1,6 +1,6 @@
-# Ebook Reader — User Guide
+# Folio — User Guide
 
-How to install, import books, and read them. Settings and shortcuts are at the bottom.
+How to install, import books, and read them. Covers all formats, collections, highlights, catalog browsing, and more.
 
 ---
 
@@ -8,10 +8,16 @@ How to install, import books, and read them. Settings and shortcuts are at the b
 
 1. [Getting Started](#1-getting-started)
 2. [Managing Your Library](#2-managing-your-library)
-3. [Reading a Book](#3-reading-a-book)
-4. [Customizing Your Reading Experience](#4-customizing-your-reading-experience)
-5. [Keyboard Shortcuts](#5-keyboard-shortcuts)
-6. [Troubleshooting](#6-troubleshooting)
+3. [Collections](#3-collections)
+4. [Reading a Book](#4-reading-a-book)
+5. [Highlights and Bookmarks](#5-highlights-and-bookmarks)
+6. [Book Metadata and OpenLibrary](#6-book-metadata-and-openlibrary)
+7. [Catalog Browsing (OPDS)](#7-catalog-browsing-opds)
+8. [Profiles](#8-profiles)
+9. [Customizing Your Reading Experience](#9-customizing-your-reading-experience)
+10. [Backup and Restore](#10-backup-and-restore)
+11. [Keyboard Shortcuts](#11-keyboard-shortcuts)
+12. [Troubleshooting](#12-troubleshooting)
 
 ---
 
@@ -37,97 +43,205 @@ Go to the [GitHub Releases page](https://github.com/mikedamoiseau/ebook-reader/r
 
 ### Installing
 
-**macOS:** Open the `.dmg`, drag Ebook Reader into your Applications folder, then double-click to launch it.
+**macOS:** Open the `.dmg`, drag Folio into your Applications folder, then double-click to launch it.
 
 > **macOS Gatekeeper — "damaged" or "unidentified developer" warning**
 >
-> Because this app is not notarized, macOS 14 (Sonoma) and later may block it with a _"ebook-reader.app is damaged and can't be opened"_ message.
+> Because this app is not notarized, macOS 14 (Sonoma) and later may block it with a _"Folio.app is damaged and can't be opened"_ message.
 >
 > **Fix:** open Terminal and run:
 > ```bash
-> xattr -cr /Applications/ebook-reader.app
+> xattr -cr /Applications/Folio.app
 > ```
 > Then launch the app as normal. This removes the quarantine flag and only needs to be done once after each install or update.
 
 **Windows:** Run the `.msi` installer and follow the prompts.
 
-**Linux (AppImage):** Make the file executable (`chmod +x ebook-reader.AppImage`), then run it.
+**Linux (AppImage):** Make the file executable (`chmod +x Folio.AppImage`), then run it.
 
-**Linux (.deb):** Run `sudo dpkg -i ebook-reader.deb`.
+**Linux (.deb):** Run `sudo dpkg -i folio.deb`.
 
 ### First launch
 
-The first time you open the app, you'll see an empty library with a prompt to import your first book. Your data stays on your machine.
-
-> **Note:** The library starts empty on first launch — you'll see a prompt to import your first book.
+The first time you open the app, you'll see an empty library with a prompt to import your first book. Your data stays on your machine — nothing is sent to the cloud.
 
 ---
 
 ## 2. Managing Your Library
 
-### Importing EPUB files
+### Supported formats
 
-**File picker:** Click the Import button in the top-right corner of the library screen. A file dialog opens; pick any `.epub` file and confirm. The book appears in your library within a few seconds.
+| Format | Type |
+|--------|------|
+| EPUB 2 and EPUB 3 | Reflowable ebooks |
+| PDF | Fixed-layout documents |
+| CBZ | Comic book archives (ZIP) |
+| CBR | Comic book archives (RAR) |
 
-> **Note:** The Import button is in the top-right corner of the library screen.
+### Importing books
 
-**Drag and drop:** Drag one or more `.epub` files from Finder or File Explorer directly onto the library window. A blue "Drop to import" overlay appears. Release to import them.
+**File picker:** Click the Import button in the top-right corner of the library screen. A file dialog opens; pick one or more files in any supported format and confirm.
 
-> **Note:** Dragging files onto the window shows a blue "Drop to import" overlay.
+**Folder scan:** Use the Import button's folder option to scan an entire directory. Folio finds all supported files in the folder and imports them in batch, with a progress indicator.
 
-> **Note:** Only `.epub` files are accepted. Dragging other formats does nothing.
+**Drag and drop:** Drag files from Finder or File Explorer directly onto the library window. A "Drop to import" overlay appears. Release to import them.
+
+When you import a book, Folio copies the file into its own managed library folder (default `~/Documents/ebook-reader/`). The original file is not modified or moved. Duplicate files are detected by content hash and skipped automatically.
 
 ### Viewing your books
 
-Books are shown as a cover grid. Each card shows the cover image (when the EPUB includes one), the title and author, and a small progress indicator.
+Books are shown as a cover grid. Each card displays the cover image, title, author, a progress percentage badge, and a format badge for non-EPUB books. A "Continue Reading" row at the top shows your 5 most recently read books.
 
-### Searching
+### Searching and filtering
 
-Type in the search bar at the top to filter by title or author. Results update as you type. If nothing matches, you'll see a "No results" message.
+- **Search:** Type in the search bar to filter by title or author. Results update as you type.
+- **Format filter:** Filter by All, EPUB, PDF, CBZ, or CBR.
+- **Status filter:** Filter by All, Unread, In Progress, or Finished.
+- **Sorting:** Sort by date added, title, author, last read, or progress — ascending or descending.
 
-> **Note:** The search bar filters your library as you type.
+All filters combine, so you can search for "asimov" within "epub" books that are "in progress."
 
-### Removing a book
+### Editing and removing books
 
-Hover over a book card and click the trash icon. The book is removed from your library, but the original file on disk stays untouched. Only the library entry and saved progress are deleted.
+Hover over a book card to reveal action buttons:
 
-> **Note:** Hover over a book card to see the trash icon.
+- **Edit:** Opens a dialog to change the title, author, cover image, and tags. See [Book Metadata and OpenLibrary](#6-book-metadata-and-openlibrary).
+- **Delete:** Removes the book from your library (with a confirmation prompt).
 
 ---
 
-## 3. Reading a book
+## 3. Collections
+
+Collections let you organize books into groups. Open the collections sidebar by clicking the collections icon or pressing `C`.
+
+### Manual collections
+
+Create a collection, then drag book cards onto it to add them. You can remove books from a manual collection via the book card's context actions.
+
+### Automated collections
+
+Define rules and Folio populates the collection automatically. Available rule types:
+
+| Field | Operators |
+|-------|-----------|
+| Author | contains (substring match) |
+| Format | equals (epub, pdf, cbz, cbr) |
+| Date added | within last N days |
+| Reading progress | is unread / in progress / finished |
+
+### Collection options
+
+- Custom icon (choose from preset emoji)
+- Custom color (choose from preset palette)
+- Export as Markdown
+- Delete collection
+
+---
+
+## 4. Reading a Book
 
 ### Opening a book
 
-Click any book card to open it. If you've read it before, the app picks up where you left off — same chapter, same scroll position.
+Click any book card to open it. If you've read it before, Folio picks up where you left off — same chapter (or page), same scroll position.
 
-### Navigating chapters
+### EPUB reading
 
-- Click the Previous / Next buttons at the bottom of the page
-- Press the left or right arrow keys
-- Open the Table of Contents and click a chapter directly
+- **Chapter navigation:** Use the Previous/Next buttons at the bottom, press the left/right arrow keys, or pick a chapter from the Table of Contents.
+- **Table of Contents:** Click the list icon in the header or press `T`. The sidebar shows a searchable, hierarchical chapter list. The current chapter is highlighted.
+- **Focus mode:** Press `D` to hide all UI and read distraction-free. Move the mouse to the top or bottom edge to temporarily reveal controls.
 
-### Using the Table of Contents
+### PDF and comic book reading (PDF, CBZ, CBR)
 
-Click the list icon (☰) in the top-left of the reader header. The TOC sidebar slides open with all chapters listed; the current one is highlighted. Click any entry to jump there. Press Escape or click outside the sidebar to close it.
-
-> **Note:** The TOC sidebar opens on the left; the current chapter is highlighted.
+These formats use a page-by-page viewer. Navigate with the Previous/Next buttons or arrow keys. The footer shows the current page number and total page count.
 
 ### Reading progress
 
-Progress is saved automatically as you read. The footer shows your current chapter number and a scroll-position bar for that chapter. The next time you open the book, you land in exactly the same spot.
+Progress is saved automatically as you read. The library shows a percentage on each book card. When you reopen a book, you return to exactly where you stopped.
+
+Folio also records reading sessions (time spent, pages read) for the reading stats dashboard.
 
 ### Returning to the library
 
-Click the back arrow (←) in the top-left corner. Your progress is saved when you exit.
+Click the back arrow in the top-left corner or press `Escape`. Your progress is saved when you exit.
 
 ---
 
-## 4. Customizing your reading experience
+## 5. Highlights and Bookmarks
 
-Click the gear icon (⚙) in the top-right of the reader header to open Settings.
+### Highlights (EPUB only)
 
-> **Note:** The Settings panel opens in the top-right, with controls for theme, font size, and font family.
+Select text while reading to see a color picker popup. Choose from five colors: yellow, green, blue, pink, or orange. The highlighted text is saved with its position.
+
+Open the highlights panel to:
+
+- View all highlights grouped by chapter
+- Add or edit notes on any highlight
+- Click a highlight to jump to that chapter
+- Delete individual highlights
+- Export all highlights as Markdown
+
+### Bookmarks
+
+Press `B` in the reader to bookmark the current position. Bookmarks are listed alongside your reading progress.
+
+---
+
+## 6. Book Metadata and OpenLibrary
+
+Click the edit button on any book card to open the metadata editor.
+
+### Editable fields
+
+- Title
+- Author
+- Cover image (upload a JPG, PNG, or WebP)
+- Tags (with autocomplete from your existing tags)
+
+### OpenLibrary enrichment
+
+Click "Search OpenLibrary" in the edit dialog to look up your book by title and author. From the results you can pull in:
+
+- Description
+- Genres
+- Community rating (0-5 stars)
+
+This is a one-click operation — select a match and the metadata is applied to your book.
+
+---
+
+## 7. Catalog Browsing (OPDS)
+
+Folio can browse online book catalogs that use the OPDS protocol (Open Publication Distribution System). This includes sources like Project Gutenberg, Standard Ebooks, ManyBooks, Feedbooks, and self-hosted Calibre servers.
+
+### Browsing
+
+Open the catalog browser from the library. Pick a catalog to browse its categories and entries. Each entry shows the title, author, summary, and cover when available.
+
+### Searching
+
+If a catalog supports search, a search bar appears. Results display inline.
+
+### Downloading
+
+Click a download link to grab a book (EPUB or PDF) and import it directly into your library.
+
+### Custom catalogs
+
+Add your own OPDS catalog by URL (useful for self-hosted Calibre or COPS servers). Custom catalogs can be removed at any time.
+
+---
+
+## 8. Profiles
+
+Profiles give you completely separate libraries. Each profile has its own books, reading progress, collections, and highlights.
+
+Create and switch profiles from the profile dropdown in the library header. The dropdown only appears once you have more than one profile. Non-default profiles can be deleted.
+
+---
+
+## 9. Customizing Your Reading Experience
+
+Click the gear icon in the reader header to open Settings.
 
 ### Theme
 
@@ -135,43 +249,79 @@ Light, Dark, or System. System mode tracks your OS setting automatically.
 
 ### Font size
 
-Use the slider or the +/- buttons to pick a size between 14px and 24px. The A- / A+ buttons in the reader header do the same thing if you want a quick adjustment without opening Settings.
+Adjust between 14px and 24px using the slider, the +/- buttons in Settings, or the A-/A+ buttons in the reader header.
 
 ### Font family
 
-Pick Serif (Georgia) or Sans-serif (system font). A live preview sentence shows you what it looks like before you close the panel.
+Choose Serif (Lora) or Sans-serif (DM Sans). A live preview shows the result before you close the panel.
+
+### Library folder
+
+In Settings, you can view your current library folder path, file count, and total storage used. You can change the library folder — Folio will offer to move existing files to the new location or keep them in place.
 
 ---
 
-## 5. Keyboard shortcuts
+## 10. Backup and Restore
+
+From Settings you can export and import library backups as ZIP files.
+
+**Export options:**
+
+- **Metadata only** — small file containing your reading progress, collections, tags, and highlights.
+- **Full backup** — includes all book files alongside the metadata.
+
+**Import:** Select a backup ZIP to restore your library.
+
+---
+
+## 11. Keyboard Shortcuts
+
+Press `?` at any time to see the shortcut reference.
+
+### Library
 
 | Shortcut | Action |
 |----------|--------|
-| `→` | Next chapter |
-| `←` | Previous chapter |
-| `Escape` | Close Table of Contents sidebar |
+| `/` | Focus search bar |
+| `C` | Toggle collections sidebar |
+| `Escape` | Clear search / close panels |
+| `?` | Toggle shortcut help |
+
+### Reader
+
+| Shortcut | Action |
+|----------|--------|
+| `←` | Previous chapter / page |
+| `→` | Next chapter / page |
+| `T` | Toggle Table of Contents |
+| `B` | Add bookmark |
+| `D` | Toggle focus mode |
+| `Escape` | Close panel / exit focus mode / back to library |
+| `?` | Toggle shortcut help |
 
 ---
 
-## 6. Troubleshooting
+## 12. Troubleshooting
 
 ### "Failed to load book"
 
-The EPUB is probably corrupted or uses a spec the parser can't handle. Try re-downloading the file, or open it in another reader to check if the file itself is the problem.
+The file is probably corrupted or uses a format variant the parser can't handle. Try re-downloading the file, or open it in another reader to check if the file itself is the problem.
 
 ### Supported formats
 
-EPUB 2 and EPUB 3 only. The app does not open PDF, MOBI, AZW, CBZ, or any other format.
+Folio supports **EPUB** (versions 2 and 3), **PDF**, **CBZ**, and **CBR**. Other formats such as MOBI, AZW, and DjVu are not supported.
 
-### Where is library data stored?
+### Where is my data stored?
+
+**Library database and app data:**
 
 | Platform | Location |
 |----------|----------|
-| macOS    | `~/Library/Application Support/ebook-reader/` |
-| Windows  | `%APPDATA%\ebook-reader\` |
-| Linux    | `~/.local/share/ebook-reader/` |
+| macOS    | `~/Library/Application Support/com.mike.folio/` |
+| Windows  | `%APPDATA%\com.mike.folio\` |
+| Linux    | `~/.local/share/com.mike.folio/` |
 
-The app stores a path reference to each book, not a copy of the file itself. If you move or delete an EPUB from its original location, the library entry stays but the book won't open.
+**Book files:** Imported books are copied to the library folder, which defaults to `~/Documents/ebook-reader/`. You can change this in Settings. Since Folio keeps its own copy of each book, moving or deleting the original file has no effect on your library.
 
 ### The app won't start
 
@@ -180,7 +330,7 @@ Check that your OS meets the minimum version listed in [Getting Started](#1-gett
 **macOS — "damaged and can't be opened" or "unidentified developer":** This is a Gatekeeper quarantine flag on unsigned apps. Run the following in Terminal, then try launching again:
 
 ```bash
-xattr -cr /Applications/ebook-reader.app
+xattr -cr /Applications/Folio.app
 ```
 
 Alternatively go to **System Settings > Privacy & Security** and click **Open Anyway** after the first blocked launch attempt.
