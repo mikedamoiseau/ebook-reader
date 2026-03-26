@@ -138,6 +138,11 @@ pub fn run() {
             commands::browse_opds,
             commands::search_all_catalogs,
             commands::download_opds_book,
+            commands::get_backup_providers,
+            commands::save_backup_config,
+            commands::get_backup_config,
+            commands::run_backup,
+            commands::get_backup_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

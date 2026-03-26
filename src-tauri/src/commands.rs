@@ -1726,6 +1726,70 @@ pub async fn get_pdf_page(
     pdf::get_page_image(&file_path, page_index, 1200)
 }
 
+// ---- Remote Backup Commands ----
+
+#[tauri::command]
+pub async fn get_backup_providers() -> Result<Vec<crate::backup::ProviderInfo>, String> {
+    Ok(crate::backup::provider_schemas())
+}
+
+#[tauri::command]
+pub async fn save_backup_config(
+    config: crate::backup::BackupConfig,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
+    let json = serde_json::to_string(&config).map_err(|e| e.to_string())?;
+    db::set_setting(&conn, "backup_config", &json).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_backup_config(
+    state: State<'_, AppState>,
+) -> Result<Option<crate::backup::BackupConfig>, String> {
+    let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
+    match db::get_setting(&conn, "backup_config").map_err(|e| e.to_string())? {
+        Some(j) => Ok(Some(serde_json::from_str(&j).map_err(|e| e.to_string())?)),
+        None => Ok(None),
+    }
+}
+
+#[tauri::command]
+pub async fn run_backup(state: State<'_, AppState>) -> Result<crate::backup::SyncResult, String> {
+    let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
+    let json = db::get_setting(&conn, "backup_config")
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "No backup provider configured".to_string())?;
+    let config: crate::backup::BackupConfig =
+        serde_json::from_str(&json).map_err(|e| e.to_string())?;
+    let op = crate::backup::build_operator(&config)?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(crate::backup::run_incremental_backup(&op, &conn));
+    });
+    rx.recv().map_err(|e| format!("Thread error: {e}"))?
+}
+
+#[tauri::command]
+pub async fn get_backup_status(
+    state: State<'_, AppState>,
+) -> Result<Option<crate::backup::SyncManifest>, String> {
+    let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
+    let json = match db::get_setting(&conn, "backup_config").map_err(|e| e.to_string())? {
+        Some(j) => j,
+        None => return Ok(None),
+    };
+    let config: crate::backup::BackupConfig =
+        serde_json::from_str(&json).map_err(|e| e.to_string())?;
+    let op = crate::backup::build_operator(&config)?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(crate::backup::read_manifest(&op));
+    });
+    let manifest = rx.recv().map_err(|e| format!("Thread error: {e}"))?;
+    Ok(Some(manifest))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
