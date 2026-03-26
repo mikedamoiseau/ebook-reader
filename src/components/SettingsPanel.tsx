@@ -14,6 +14,39 @@ interface LibraryFolderInfo {
   total_size_bytes: number;
 }
 
+interface ConfigField {
+  key: string;
+  label: string;
+  fieldType: string;
+  required: boolean;
+  placeholder: string;
+}
+
+interface ProviderInfo {
+  providerType: string;
+  label: string;
+  fields: ConfigField[];
+}
+
+interface BackupConfig {
+  providerType: string;
+  values: Record<string, string>;
+}
+
+interface SyncResult {
+  booksPushed: number;
+  progressPushed: number;
+  bookmarksPushed: number;
+  highlightsPushed: number;
+  collectionsPushed: number;
+  filesPushed: number;
+}
+
+interface SyncManifest {
+  lastSyncAt: number;
+  deviceId: string;
+}
+
 interface MigrationDialogState {
   currentFolder: string;
   newFolder: string;
@@ -45,6 +78,16 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const [backupMessage, setBackupMessage] = useState<string | null>(null);
   const [includeFiles, setIncludeFiles] = useState(false);
 
+  // Remote backup state
+  const [backupProviders, setBackupProviders] = useState<ProviderInfo[]>([]);
+  const [selectedProvider, setSelectedProvider] = useState<string>("");
+  const [backupFieldValues, setBackupFieldValues] = useState<Record<string, string>>({});
+  const [savedBackupConfig, setSavedBackupConfig] = useState<BackupConfig | null>(null);
+  const [savingBackupConfig, setSavingBackupConfig] = useState(false);
+  const [runningBackup, setRunningBackup] = useState(false);
+  const [backupStatus, setBackupStatus] = useState<SyncManifest | null>(null);
+  const [remoteBackupMessage, setRemoteBackupMessage] = useState<string | null>(null);
+
   const loadLibraryFolder = useCallback(async () => {
     try {
       const folder = await invoke<string>("get_library_folder");
@@ -56,11 +99,31 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     }
   }, []);
 
+  const loadBackupSettings = useCallback(async () => {
+    try {
+      const providers = await invoke<ProviderInfo[]>("get_backup_providers");
+      setBackupProviders(providers);
+      const config = await invoke<BackupConfig | null>("get_backup_config");
+      if (config) {
+        setSavedBackupConfig(config);
+        setSelectedProvider(config.providerType);
+        setBackupFieldValues(config.values);
+      } else if (providers.length > 0) {
+        setSelectedProvider(providers[0].providerType);
+      }
+      const status = await invoke<SyncManifest | null>("get_backup_status");
+      setBackupStatus(status);
+    } catch (e) {
+      console.error('Failed to load backup settings:', e);
+    }
+  }, []);
+
   useEffect(() => {
     if (open) {
       loadLibraryFolder();
+      loadBackupSettings();
     }
-  }, [open, loadLibraryFolder]);
+  }, [open, loadLibraryFolder, loadBackupSettings]);
 
   useEffect(() => {
     if (!open) return;
@@ -186,6 +249,59 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
       setBackupMessage(`Import failed: ${err}`);
     } finally {
       setExporting(false);
+    }
+  };
+
+  const currentProviderInfo = backupProviders.find(
+    (p) => p.providerType === selectedProvider
+  );
+
+  const handleProviderChange = (providerType: string) => {
+    setSelectedProvider(providerType);
+    setBackupFieldValues({});
+    setRemoteBackupMessage(null);
+  };
+
+  const handleSaveBackupConfig = async () => {
+    if (!selectedProvider) return;
+    setSavingBackupConfig(true);
+    setRemoteBackupMessage(null);
+    try {
+      const config: BackupConfig = {
+        providerType: selectedProvider,
+        values: backupFieldValues,
+      };
+      await invoke("save_backup_config", { config });
+      setSavedBackupConfig(config);
+      setRemoteBackupMessage("Configuration saved.");
+    } catch (err) {
+      setRemoteBackupMessage(`Save failed: ${err}`);
+    } finally {
+      setSavingBackupConfig(false);
+    }
+  };
+
+  const handleRunBackup = async () => {
+    setRunningBackup(true);
+    setRemoteBackupMessage(null);
+    try {
+      const result = await invoke<SyncResult>("run_backup");
+      const parts: string[] = [];
+      if (result.booksPushed > 0) parts.push(`${result.booksPushed} books`);
+      if (result.progressPushed > 0) parts.push(`${result.progressPushed} progress entries`);
+      if (result.bookmarksPushed > 0) parts.push(`${result.bookmarksPushed} bookmarks`);
+      if (result.highlightsPushed > 0) parts.push(`${result.highlightsPushed} highlights`);
+      if (result.collectionsPushed > 0) parts.push(`${result.collectionsPushed} collections`);
+      if (result.filesPushed > 0) parts.push(`${result.filesPushed} files`);
+      const summary =
+        parts.length > 0 ? `Backed up: ${parts.join(", ")}.` : "Everything already up to date.";
+      setRemoteBackupMessage(summary);
+      const status = await invoke<SyncManifest | null>("get_backup_status");
+      setBackupStatus(status);
+    } catch (err) {
+      setRemoteBackupMessage(`Backup failed: ${err}`);
+    } finally {
+      setRunningBackup(false);
     }
   };
 
@@ -395,6 +511,110 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
               )}
             </div>
           </section>
+
+          {/* Remote Backup */}
+          {backupProviders.length > 0 && (
+            <section>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted mb-3">
+                Remote Backup
+              </h3>
+              <div className="space-y-2">
+                {/* Provider selector */}
+                <div className="bg-warm-subtle rounded-xl px-3 py-2.5">
+                  <label className="text-xs text-ink-muted mb-1 block">Provider</label>
+                  <select
+                    value={selectedProvider}
+                    onChange={(e) => handleProviderChange(e.target.value)}
+                    className="w-full bg-transparent text-sm text-ink focus:outline-none cursor-pointer"
+                  >
+                    {backupProviders.map((p) => (
+                      <option key={p.providerType} value={p.providerType}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Dynamic config fields */}
+                {currentProviderInfo && currentProviderInfo.fields.map((field) => (
+                  <div key={field.key} className="bg-warm-subtle rounded-xl px-3 py-2.5">
+                    <label className="text-xs text-ink-muted mb-1 block">
+                      {field.label}
+                      {field.required && (
+                        <span className="text-accent ml-1">*</span>
+                      )}
+                    </label>
+                    <input
+                      type={field.fieldType === "password" ? "password" : "text"}
+                      value={backupFieldValues[field.key] ?? ""}
+                      onChange={(e) =>
+                        setBackupFieldValues((prev) => ({
+                          ...prev,
+                          [field.key]: e.target.value,
+                        }))
+                      }
+                      placeholder={field.placeholder}
+                      className="w-full bg-transparent text-sm text-ink placeholder:text-ink-muted/50 focus:outline-none"
+                    />
+                  </div>
+                ))}
+
+                {/* Save config */}
+                <button
+                  onClick={handleSaveBackupConfig}
+                  disabled={savingBackupConfig || !selectedProvider}
+                  className="w-full px-3 py-2 text-sm font-medium bg-accent text-surface rounded-xl hover:opacity-90 transition-opacity disabled:opacity-40"
+                >
+                  {savingBackupConfig ? "Saving…" : "Save Configuration"}
+                </button>
+
+                {/* Backup now — only shown when a config has been saved */}
+                {savedBackupConfig && (
+                  <button
+                    onClick={handleRunBackup}
+                    disabled={runningBackup}
+                    className="w-full px-3 py-2 text-sm text-ink-muted hover:text-ink bg-warm-subtle hover:bg-warm-border rounded-xl transition-colors text-left disabled:opacity-40 flex items-center gap-2"
+                  >
+                    {runningBackup && (
+                      <svg
+                        className="animate-spin w-3.5 h-3.5 shrink-0"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12" cy="12" r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                        />
+                      </svg>
+                    )}
+                    {runningBackup ? "Backing up…" : "Backup Now"}
+                  </button>
+                )}
+
+                {/* Last backup timestamp */}
+                {backupStatus && (
+                  <p className="text-xs text-ink-muted px-1">
+                    Last backup:{" "}
+                    {new Date(backupStatus.lastSyncAt * 1000).toLocaleString()}
+                    {" · "}
+                    Device: {backupStatus.deviceId}
+                  </p>
+                )}
+
+                {/* Status messages */}
+                {remoteBackupMessage && (
+                  <p className="text-xs text-ink-muted px-1">{remoteBackupMessage}</p>
+                )}
+              </div>
+            </section>
+          )}
         </div>
       </div>
 
