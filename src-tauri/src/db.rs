@@ -4,7 +4,9 @@ use rusqlite::{params, Connection, Result};
 use std::path::Path;
 use std::time::Duration;
 
-use crate::models::{Book, Bookmark, Collection, CollectionRule, CollectionType, ReadingProgress};
+use crate::models::{
+    ActivityEntry, Book, Bookmark, Collection, CollectionRule, CollectionType, ReadingProgress,
+};
 
 pub type DbPool = Pool<SqliteConnectionManager>;
 
@@ -103,6 +105,16 @@ fn run_schema(conn: &Connection) -> Result<()> {
             book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
             tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
             PRIMARY KEY (book_id, tag_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS activity_log (
+            id TEXT PRIMARY KEY,
+            timestamp INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            entity_type TEXT NOT NULL,
+            entity_id TEXT,
+            entity_name TEXT,
+            detail TEXT
         );
     ",
     )?;
@@ -950,6 +962,68 @@ pub fn get_books_in_collection(conn: &Connection, collection_id: &str) -> Result
     rows.collect()
 }
 
+// --- Activity log ---
+
+pub fn insert_activity(conn: &Connection, entry: &ActivityEntry) -> Result<()> {
+    conn.execute(
+        "INSERT INTO activity_log (id, timestamp, action, entity_type, entity_id, entity_name, detail) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![entry.id, entry.timestamp, entry.action, entry.entity_type, entry.entity_id, entry.entity_name, entry.detail],
+    )?;
+    Ok(())
+}
+
+pub fn get_activity_log(
+    conn: &Connection,
+    limit: u32,
+    offset: u32,
+    action_filter: Option<&str>,
+) -> Result<Vec<ActivityEntry>> {
+    let (sql, filter_params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(action) =
+        action_filter
+    {
+        (
+                "SELECT id, timestamp, action, entity_type, entity_id, entity_name, detail FROM activity_log WHERE action = ?1 ORDER BY timestamp DESC LIMIT ?2 OFFSET ?3".to_string(),
+                vec![
+                    Box::new(action.to_string()) as Box<dyn rusqlite::types::ToSql>,
+                    Box::new(limit),
+                    Box::new(offset),
+                ],
+            )
+    } else {
+        (
+                "SELECT id, timestamp, action, entity_type, entity_id, entity_name, detail FROM activity_log ORDER BY timestamp DESC LIMIT ?1 OFFSET ?2".to_string(),
+                vec![
+                    Box::new(limit) as Box<dyn rusqlite::types::ToSql>,
+                    Box::new(offset),
+                ],
+            )
+    };
+
+    let mut stmt = conn.prepare(&sql)?;
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        filter_params.iter().map(|p| p.as_ref()).collect();
+    let rows = stmt.query_map(params_refs.as_slice(), |row| {
+        Ok(ActivityEntry {
+            id: row.get(0)?,
+            timestamp: row.get(1)?,
+            action: row.get(2)?,
+            entity_type: row.get(3)?,
+            entity_id: row.get(4)?,
+            entity_name: row.get(5)?,
+            detail: row.get(6)?,
+        })
+    })?;
+    rows.collect()
+}
+
+pub fn prune_activity_log(conn: &Connection, keep: u32) -> Result<()> {
+    conn.execute(
+        "DELETE FROM activity_log WHERE id NOT IN (SELECT id FROM activity_log ORDER BY timestamp DESC LIMIT ?1)",
+        params![keep],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1313,5 +1387,84 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 1, "idx_bookmarks_book_id index should exist");
+    }
+
+    fn sample_activity(id: &str, action: &str, timestamp: i64) -> crate::models::ActivityEntry {
+        crate::models::ActivityEntry {
+            id: id.to_string(),
+            timestamp,
+            action: action.to_string(),
+            entity_type: "book".to_string(),
+            entity_id: Some("book-1".to_string()),
+            entity_name: Some("Test Book".to_string()),
+            detail: Some("some detail".to_string()),
+        }
+    }
+
+    #[test]
+    fn test_activity_log_crud() {
+        let (_dir, conn) = setup();
+        let entry = sample_activity("act-1", "import", 1700000000);
+        insert_activity(&conn, &entry).unwrap();
+
+        let results = get_activity_log(&conn, 100, 0, None).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "act-1");
+        assert_eq!(results[0].action, "import");
+        assert_eq!(results[0].entity_type, "book");
+        assert_eq!(results[0].entity_id, Some("book-1".to_string()));
+        assert_eq!(results[0].entity_name, Some("Test Book".to_string()));
+        assert_eq!(results[0].detail, Some("some detail".to_string()));
+        assert_eq!(results[0].timestamp, 1700000000);
+    }
+
+    #[test]
+    fn test_activity_log_ordering() {
+        let (_dir, conn) = setup();
+        insert_activity(&conn, &sample_activity("act-a", "import", 1000)).unwrap();
+        insert_activity(&conn, &sample_activity("act-b", "import", 3000)).unwrap();
+        insert_activity(&conn, &sample_activity("act-c", "import", 2000)).unwrap();
+
+        let results = get_activity_log(&conn, 100, 0, None).unwrap();
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].id, "act-b"); // most recent first
+        assert_eq!(results[1].id, "act-c");
+        assert_eq!(results[2].id, "act-a");
+    }
+
+    #[test]
+    fn test_activity_log_filter_by_action() {
+        let (_dir, conn) = setup();
+        insert_activity(&conn, &sample_activity("act-f1", "import", 1000)).unwrap();
+        insert_activity(&conn, &sample_activity("act-f2", "delete", 2000)).unwrap();
+
+        let imports = get_activity_log(&conn, 100, 0, Some("import")).unwrap();
+        assert_eq!(imports.len(), 1);
+        assert_eq!(imports[0].id, "act-f1");
+
+        let deletes = get_activity_log(&conn, 100, 0, Some("delete")).unwrap();
+        assert_eq!(deletes.len(), 1);
+        assert_eq!(deletes[0].id, "act-f2");
+    }
+
+    #[test]
+    fn test_activity_log_pruning() {
+        let (_dir, conn) = setup();
+        for i in 0..5 {
+            insert_activity(
+                &conn,
+                &sample_activity(&format!("act-p{i}"), "import", 1000 + i as i64),
+            )
+            .unwrap();
+        }
+
+        prune_activity_log(&conn, 3).unwrap();
+
+        let results = get_activity_log(&conn, 100, 0, None).unwrap();
+        assert_eq!(results.len(), 3);
+        // Should keep the 3 most recent (timestamps 4000, 3000, 2000 → act-p4, act-p3, act-p2)
+        assert_eq!(results[0].id, "act-p4");
+        assert_eq!(results[1].id, "act-p3");
+        assert_eq!(results[2].id, "act-p2");
     }
 }

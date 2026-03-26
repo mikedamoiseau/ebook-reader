@@ -128,6 +128,18 @@ pub struct Collection {
     pub rules: Vec<CollectionRule>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityEntry {
+    pub id: String,
+    pub timestamp: i64,
+    pub action: String,
+    pub entity_type: String,
+    pub entity_id: Option<String>,
+    pub entity_name: Option<String>,
+    pub detail: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
