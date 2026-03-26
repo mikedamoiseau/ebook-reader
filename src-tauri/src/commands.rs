@@ -55,11 +55,23 @@ fn save_cover_from_data_uri(
         "image/gif" => "gif",
         _ => "jpg",
     };
-    let bytes = general_purpose::STANDARD.decode(encoded).ok()?;
+    let bytes = match general_purpose::STANDARD.decode(encoded) {
+        Ok(b) => b,
+        Err(e) => {
+            log::warn!("cover extraction failed for book {book_id}: base64 decode error: {e}");
+            return None;
+        }
+    };
     let dir = data_dir.join("covers").join(book_id);
-    std::fs::create_dir_all(&dir).ok()?;
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        log::warn!("cover extraction failed for book {book_id}: could not create cover directory: {e}");
+        return None;
+    }
     let path = dir.join(format!("cover.{ext}"));
-    std::fs::write(&path, &bytes).ok()?;
+    if let Err(e) = std::fs::write(&path, &bytes) {
+        log::warn!("cover extraction failed for book {book_id}: could not write cover file: {e}");
+        return None;
+    }
     Some(path.to_string_lossy().to_string())
 }
 
@@ -160,7 +172,11 @@ pub async fn import_book(
                         cover_dir = Some(dir);
                         Some(path)
                     }
-                    _ => None,
+                    Ok(None) => None,
+                    Err(e) => {
+                        log::warn!("cover extraction failed for book {book_id}: {e}");
+                        None
+                    }
                 }
             } else {
                 None
@@ -202,7 +218,11 @@ pub async fn import_book(
             })?;
             let cover_path = if let Ok(data_dir) = app.path().app_data_dir() {
                 let dir = data_dir.join("covers").join(&book_id);
-                if let Some(path) = cbz::get_page_image(&library_path, 0)
+                let page_result = cbz::get_page_image(&library_path, 0);
+                if let Err(ref e) = page_result {
+                    log::warn!("cover extraction failed for book {book_id}: {e}");
+                }
+                if let Some(path) = page_result
                     .ok()
                     .and_then(|uri| save_cover_from_data_uri(&uri, &data_dir, &book_id))
                 {
@@ -241,7 +261,11 @@ pub async fn import_book(
             })?;
             let cover_path = if let Ok(data_dir) = app.path().app_data_dir() {
                 let dir = data_dir.join("covers").join(&book_id);
-                if let Some(path) = cbr::get_page_image(&library_path, 0)
+                let page_result = cbr::get_page_image(&library_path, 0);
+                if let Err(ref e) = page_result {
+                    log::warn!("cover extraction failed for book {book_id}: {e}");
+                }
+                if let Some(path) = page_result
                     .ok()
                     .and_then(|uri| save_cover_from_data_uri(&uri, &data_dir, &book_id))
                 {
@@ -291,7 +315,11 @@ pub async fn import_book(
             // Extract first page as cover thumbnail.
             let cover_path = if let Ok(data_dir) = app.path().app_data_dir() {
                 let dir = data_dir.join("covers").join(&book_id);
-                if let Some(path) = pdf::get_page_image(&library_path, 0, 400)
+                let page_result = pdf::get_page_image(&library_path, 0, 400);
+                if let Err(ref e) = page_result {
+                    log::warn!("cover extraction failed for book {book_id}: {e}");
+                }
+                if let Some(path) = page_result
                     .ok()
                     .and_then(|uri| save_cover_from_data_uri(&uri, &data_dir, &book_id))
                 {

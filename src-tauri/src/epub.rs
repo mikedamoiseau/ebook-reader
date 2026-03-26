@@ -431,10 +431,8 @@ fn sanitize_cover_href(href: &str) -> Option<String> {
         match segment {
             "" | "." => {}
             ".." => {
-                if parts.pop().is_none() {
-                    // Tried to go above root — path traversal
-                    return None;
-                }
+                // Tried to go above root — path traversal
+                parts.pop()?;
             }
             other => parts.push(other),
         }

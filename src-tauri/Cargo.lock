@@ -1352,6 +1352,7 @@ dependencies = [
  "dirs 5.0.1",
  "image",
  "keyring",
+ "log",
  "opendal",
  "pdfium-render",
  "quick-xml 0.36.2",
