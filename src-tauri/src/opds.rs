@@ -281,7 +281,10 @@ mod tests {
         assert_eq!(entry.author, "Jane Doe");
         assert_eq!(entry.summary, "A great book");
         assert_eq!(entry.links.len(), 1);
-        assert_eq!(entry.links[0].href, "https://example.com/download/book.epub");
+        assert_eq!(
+            entry.links[0].href,
+            "https://example.com/download/book.epub"
+        );
         assert_eq!(entry.links[0].mime_type, "application/epub+zip");
     }
 
@@ -299,7 +302,10 @@ mod tests {
 
         let feed = parse_feed(xml, "https://example.com/catalog/root.xml").unwrap();
         // Relative path should resolve against base directory
-        assert_eq!(feed.entries[0].links[0].href, "https://example.com/catalog/book.epub");
+        assert_eq!(
+            feed.entries[0].links[0].href,
+            "https://example.com/catalog/book.epub"
+        );
     }
 
     #[test]
@@ -316,7 +322,10 @@ mod tests {
 
         let feed = parse_feed(xml, "https://example.com/catalog/root.xml").unwrap();
         // Absolute path should use scheme+host only
-        assert_eq!(feed.entries[0].links[0].href, "https://example.com/files/book.epub");
+        assert_eq!(
+            feed.entries[0].links[0].href,
+            "https://example.com/files/book.epub"
+        );
     }
 
     #[test]
@@ -332,7 +341,10 @@ mod tests {
         </feed>"#;
 
         let feed = parse_feed(xml, "https://example.com/opds").unwrap();
-        assert_eq!(feed.entries[0].links[0].href, "https://cdn.example.com/book.epub");
+        assert_eq!(
+            feed.entries[0].links[0].href,
+            "https://cdn.example.com/book.epub"
+        );
     }
 
     #[test]
@@ -385,7 +397,10 @@ mod tests {
         </feed>"#;
 
         let feed = parse_feed(xml, "https://example.com/opds").unwrap();
-        assert_eq!(feed.next_url.as_deref(), Some("https://example.com/opds?page=2"));
+        assert_eq!(
+            feed.next_url.as_deref(),
+            Some("https://example.com/opds?page=2")
+        );
         assert_eq!(
             feed.search_url.as_deref(),
             Some("https://example.com/search?q={searchTerms}")
