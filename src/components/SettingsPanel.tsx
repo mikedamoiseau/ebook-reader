@@ -78,6 +78,10 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const [backupMessage, setBackupMessage] = useState<string | null>(null);
   const [includeFiles, setIncludeFiles] = useState(false);
 
+  // Metadata scan settings
+  const [autoScanImport, setAutoScanImport] = useState(true);
+  const [autoScanStartup, setAutoScanStartup] = useState(false);
+
   // Remote backup state
   const [backupProviders, setBackupProviders] = useState<ProviderInfo[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<string>("");
@@ -122,6 +126,12 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     if (open) {
       loadLibraryFolder();
       loadBackupSettings();
+      (async () => {
+        const scanImport = await invoke<string | null>("get_setting_value", { key: "auto_scan_import" });
+        setAutoScanImport(scanImport !== "false");
+        const scanStartup = await invoke<string | null>("get_setting_value", { key: "auto_scan_startup" });
+        setAutoScanStartup(scanStartup === "true");
+      })().catch(() => {});
     }
   }, [open, loadLibraryFolder, loadBackupSettings]);
 
@@ -521,6 +531,40 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
           </section>
 
           {/* Remote Backup */}
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted mb-3">
+              Metadata Scan
+            </h3>
+            <div className="space-y-2">
+              <label className="flex items-start gap-2.5 cursor-pointer px-1">
+                <input type="checkbox" checked={autoScanImport}
+                  onChange={async (e) => {
+                    const val = e.target.checked;
+                    setAutoScanImport(val);
+                    await invoke("set_setting_value", { key: "auto_scan_import", value: val ? "true" : "false" }).catch(() => {});
+                  }}
+                  className="mt-0.5 accent-accent" />
+                <span className="text-sm text-ink leading-snug">
+                  Auto-scan on import
+                  <span className="block text-xs text-ink-muted mt-0.5">Automatically look up metadata when importing new books</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2.5 cursor-pointer px-1">
+                <input type="checkbox" checked={autoScanStartup}
+                  onChange={async (e) => {
+                    const val = e.target.checked;
+                    setAutoScanStartup(val);
+                    await invoke("set_setting_value", { key: "auto_scan_startup", value: val ? "true" : "false" }).catch(() => {});
+                  }}
+                  className="mt-0.5 accent-accent" />
+                <span className="text-sm text-ink leading-snug">
+                  Auto-scan on startup
+                  <span className="block text-xs text-ink-muted mt-0.5">Scan unenriched books when the app starts</span>
+                </span>
+              </label>
+            </div>
+          </section>
+
           {backupProviders.length > 0 && (
             <section>
               <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted mb-3">
