@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod cbr;
 pub mod cbz;
 pub mod commands;
