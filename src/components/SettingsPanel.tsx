@@ -28,6 +28,17 @@ interface ProviderInfo {
   fields: ConfigField[];
 }
 
+interface EnrichmentProviderInfo {
+  id: string;
+  name: string;
+  requiresApiKey: boolean;
+  apiKeyHelp: string;
+  config: {
+    enabled: boolean;
+    apiKey: string | null;
+  };
+}
+
 interface BackupConfig {
   providerType: string;
   values: Record<string, string>;
@@ -82,6 +93,9 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const [autoScanImport, setAutoScanImport] = useState(true);
   const [autoScanStartup, setAutoScanStartup] = useState(false);
 
+  // Enrichment providers
+  const [enrichmentProviders, setEnrichmentProviders] = useState<EnrichmentProviderInfo[]>([]);
+
   // Remote backup state
   const [backupProviders, setBackupProviders] = useState<ProviderInfo[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<string>("");
@@ -122,10 +136,18 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     }
   }, []);
 
+  const loadProviders = useCallback(async () => {
+    try {
+      const providers = await invoke<EnrichmentProviderInfo[]>("get_enrichment_providers");
+      setEnrichmentProviders(providers);
+    } catch {}
+  }, []);
+
   useEffect(() => {
     if (open) {
       loadLibraryFolder();
       loadBackupSettings();
+      loadProviders();
       (async () => {
         const scanImport = await invoke<string | null>("get_setting_value", { key: "auto_scan_import" });
         setAutoScanImport(scanImport !== "false");
@@ -133,7 +155,7 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
         setAutoScanStartup(scanStartup === "true");
       })().catch(() => {});
     }
-  }, [open, loadLibraryFolder, loadBackupSettings]);
+  }, [open, loadLibraryFolder, loadBackupSettings, loadProviders]);
 
   useEffect(() => {
     if (!open) return;
@@ -563,6 +585,58 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                   <span className="block text-xs text-ink-muted mt-0.5">Scan unenriched books when the app starts</span>
                 </span>
               </label>
+              {enrichmentProviders.length > 0 && (
+                <div className="mt-3">
+                  <h4 className="text-xs font-medium text-ink-muted mb-2">Enrichment Sources</h4>
+                  {enrichmentProviders.map((provider) => (
+                    <div key={provider.id} className="flex items-start gap-2 py-2 border-b border-warm-border last:border-0">
+                      <input
+                        type="checkbox"
+                        checked={provider.config.enabled}
+                        onChange={async (e) => {
+                          await invoke("set_enrichment_provider_config", {
+                            providerId: provider.id,
+                            enabled: e.target.checked,
+                            apiKey: provider.config.apiKey,
+                          }).catch(() => {});
+                          loadProviders();
+                        }}
+                        className="mt-0.5 accent-accent"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm text-ink">{provider.name}</span>
+                        {provider.apiKeyHelp && (
+                          <div className="mt-1">
+                            <input
+                              type="text"
+                              value={provider.config.apiKey ?? ""}
+                              onChange={(e) => {
+                                setEnrichmentProviders((prev) =>
+                                  prev.map((p) =>
+                                    p.id === provider.id
+                                      ? { ...p, config: { ...p.config, apiKey: e.target.value } }
+                                      : p
+                                  )
+                                );
+                              }}
+                              onBlur={async (e) => {
+                                await invoke("set_enrichment_provider_config", {
+                                  providerId: provider.id,
+                                  enabled: provider.config.enabled,
+                                  apiKey: e.target.value || null,
+                                }).catch(() => {});
+                              }}
+                              placeholder="API key (optional)"
+                              className="w-full text-xs bg-warm-subtle border border-warm-border rounded px-2 py-1 text-ink placeholder-ink-muted/50 focus:outline-none focus:border-accent"
+                            />
+                            <p className="text-[10px] text-ink-muted mt-0.5">{provider.apiKeyHelp}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </section>
 
