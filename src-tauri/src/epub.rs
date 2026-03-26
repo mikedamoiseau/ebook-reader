@@ -159,7 +159,7 @@ fn opf_base_dir(opf_path: &str) -> &str {
 }
 
 /// Extract text content between XML tags (minimal parser for metadata elements).
-fn extract_tag_text<'a>(xml: &'a str, tag: &str) -> Option<&'a str> {
+pub fn extract_tag_text<'a>(xml: &'a str, tag: &str) -> Option<&'a str> {
     let open = format!("<{tag}");
     let close = format!("</{tag}>");
     let start_tag = xml.find(&open)?;

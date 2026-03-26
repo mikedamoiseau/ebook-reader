@@ -37,9 +37,12 @@ fn open_archive(path: &str) -> Result<ZipArchive<std::fs::File>, String> {
 pub struct CbzMeta {
     pub title: String,
     pub page_count: u32,
+    pub author: Option<String>,
+    pub year: Option<u16>,
 }
 
 /// Opens a CBZ archive and returns its title (filename stem) and page count.
+/// Also parses ComicInfo.xml if present for additional metadata.
 /// Returns an error if the file is not a valid ZIP or contains no supported images.
 pub fn import_cbz(path: &str) -> Result<CbzMeta, String> {
     let mut archive = open_archive(path)?;
@@ -51,9 +54,31 @@ pub fn import_cbz(path: &str) -> Result<CbzMeta, String> {
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "Unknown".to_string());
+
+    // Try to parse ComicInfo.xml for metadata
+    let mut author = None;
+    let mut year = None;
+    let mut comic_title = None;
+    if let Ok(mut entry) = archive.by_name("ComicInfo.xml") {
+        let mut xml = String::new();
+        if std::io::Read::read_to_string(&mut entry, &mut xml).is_ok() {
+            if let Some(writer) = crate::epub::extract_tag_text(&xml, "Writer") {
+                author = Some(writer.to_string());
+            }
+            if let Some(t) = crate::epub::extract_tag_text(&xml, "Title") {
+                comic_title = Some(t.to_string());
+            }
+            if let Some(y) = crate::epub::extract_tag_text(&xml, "Year") {
+                year = y.parse::<u16>().ok();
+            }
+        }
+    }
+
     Ok(CbzMeta {
-        title,
+        title: comic_title.unwrap_or(title),
         page_count: images.len() as u32,
+        author,
+        year,
     })
 }
 

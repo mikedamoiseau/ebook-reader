@@ -184,10 +184,14 @@ pub async fn import_book(
                     .as_secs() as i64,
                 format,
                 file_hash: Some(hash),
-                description: None,
-                genres: None,
+                description: metadata.description,
+                genres: if metadata.genres.is_empty() {
+                    None
+                } else {
+                    Some(serde_json::to_string(&metadata.genres).unwrap_or_default())
+                },
                 rating: None,
-                isbn: None,
+                isbn: metadata.isbn,
                 openlibrary_key: None,
                 enrichment_status: None,
             }
@@ -212,8 +216,8 @@ pub async fn import_book(
             };
             Book {
                 id: book_id,
-                title: original_stem.clone(),
-                author: String::new(),
+                title: meta.title,
+                author: meta.author.unwrap_or_default(),
                 file_path: library_path.clone(),
                 cover_path,
                 total_chapters: meta.page_count,
