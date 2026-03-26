@@ -135,6 +135,21 @@ fn parse_feed(xml: &str, base_url: &str) -> Result<OpdsFeed, String> {
                     "summary" | "content" => {
                         current_tag = "summary".to_string();
                     }
+                    // media:thumbnail (used by Standard Ebooks Atom feeds)
+                    "thumbnail" if in_entry && entry_cover.is_none() => {
+                        for attr in e.attributes().flatten() {
+                            let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
+                            if key == "url" {
+                                let url = attr.unescape_value().unwrap_or_default().to_string();
+                                let url = resolve(&url);
+                                entry_cover = Some(if url.starts_with("http://") {
+                                    url.replacen("http://", "https://", 1)
+                                } else {
+                                    url
+                                });
+                            }
+                        }
+                    }
                     "link" => {
                         let mut href = String::new();
                         let mut rel = String::new();

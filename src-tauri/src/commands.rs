@@ -1222,7 +1222,7 @@ pub async fn get_discover_books(
     let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
 
     // Check cache (stored as JSON with a timestamp)
-    if let Some(cached) = db::get_setting(&conn, "discover_cache").map_err(|e| e.to_string())? {
+    if let Some(cached) = db::get_setting(&conn, "discover_cache_v2").map_err(|e| e.to_string())? {
         if let Ok(cache) = serde_json::from_str::<serde_json::Value>(&cached) {
             let cached_at = cache["cached_at"].as_i64().unwrap_or(0);
             let now = std::time::SystemTime::now()
@@ -1290,7 +1290,7 @@ pub async fn get_discover_books(
     });
     let _ = db::set_setting(
         &conn,
-        "discover_cache",
+        "discover_cache_v2",
         &serde_json::to_string(&cache).unwrap_or_default(),
     );
 
