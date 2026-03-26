@@ -120,17 +120,15 @@ Expand where books come from and how they persist.
 - Incremental backups (only changed files since last backup)
 - *Depends on: Library Export/Backup*
 
-### 14. Book Discovery & Catalog Search
-- Search free/legal ebook catalogs directly from the app and one-click import into library
-- Two search modes:
-  - **Browse by catalog:** select a source (e.g., Project Gutenberg, Standard Ebooks), then browse/search within it
-  - **Unified search:** search by title/author across all configured catalogs at once, see aggregated results
-- One-click download & import: book goes straight into the library folder
-- Built on OPDS (Open Publication Distribution System) — the standard protocol used by most free ebook sources
-- Known OPDS-compatible sources: Project Gutenberg, Standard Ebooks, Internet Archive, ManyBooks, Feedbooks
-- Allow users to add custom OPDS catalog URLs (for self-hosted Calibre servers, etc.)
-- Show available formats per result, prefer EPUB when available
-- *Depends on: Copy-on-Import*
+### 14. Book Discovery & Catalog Search — **Done** *(via OPDS in #11)*
+- ~~Search free/legal ebook catalogs directly from the app and one-click import into library~~
+- ~~Browse by catalog: select a source, then browse/search within it~~
+- Unified search: search by title/author across all configured catalogs at once (TBD)
+- ~~One-click download & import: book goes straight into the library folder~~
+- ~~Built on OPDS — the standard protocol used by most free ebook sources~~
+- ~~Known OPDS-compatible sources: Project Gutenberg, Standard Ebooks, ManyBooks, Feedbooks~~
+- ~~Allow users to add custom OPDS catalog URLs (for self-hosted Calibre servers, etc.)~~
+- ~~Show available formats per result, prefer EPUB when available~~
 
 ### 15. Reading Position Sync
 - Sync progress, bookmarks, and highlights across devices
@@ -146,10 +144,13 @@ Expand where books come from and how they persist.
 - ~~Reading streaks~~, yearly goal (TBD)
 - ~~Visual dashboard with charts (30-day bar chart)~~
 
-### 17. Goodreads / OpenLibrary Integration
-- Pull richer metadata: descriptions, genres, ratings, cover art
-- Auto-match books by ISBN or title+author
-- Optional: sync reading status to Goodreads
+### 17. Goodreads / OpenLibrary Integration — **Done** *(OpenLibrary)*
+- ~~Pull richer metadata: descriptions, genres, ratings, cover art~~
+- ~~Auto-match books by title+author via OpenLibrary search~~
+- ~~One-click enrich from search results in edit dialog~~
+- ~~New DB columns: description, genres, rating, isbn, openlibrary_key~~
+- Goodreads sync not implemented (API deprecated/closed)
+- Auto-enrich on import (TBD — currently manual via edit dialog)
 
 ### 18. Recently Opened — **Done**
 - ~~Quick-access section at the top of the library: last 3-5 books read~~
@@ -180,6 +181,6 @@ Expand where books come from and how they persist.
 |-------|----------|--------|-------|
 | 1 | Copy-on-Import, Multi-File Picker, Collections, Sort/Filter, Tags | 5 done | Storage & organization |
 | 2 | Highlights, Metadata Edit, Keyboard Shortcuts, Dictionary, TTS | 3 done, 2 not started | Reading experience |
-| 3 | Remote Files, Bulk Import, Backup, Book Discovery, Position Sync | 2 done, 3 not started | Import & sync |
+| 3 | Remote Files, Bulk Import, Backup, Book Discovery, Position Sync | 3 done, 1 partial, 1 not started | Import & sync |
 | 4 | Stats, Goodreads, Recents, Share, Recommendations | 3 done, 2 not started | Discovery & social |
-| 5 | Multiple Profiles | Not started | Multi-user |
+| 5 | Multiple Profiles | Done | Multi-user |

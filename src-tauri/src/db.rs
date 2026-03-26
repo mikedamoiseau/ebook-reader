@@ -113,6 +113,13 @@ fn run_schema(conn: &Connection) -> Result<()> {
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_books_file_hash ON books(file_hash);",
     );
 
+    // OpenLibrary enrichment columns
+    let _ = conn.execute_batch("ALTER TABLE books ADD COLUMN description TEXT;");
+    let _ = conn.execute_batch("ALTER TABLE books ADD COLUMN genres TEXT;"); // JSON array
+    let _ = conn.execute_batch("ALTER TABLE books ADD COLUMN rating REAL;");
+    let _ = conn.execute_batch("ALTER TABLE books ADD COLUMN isbn TEXT;");
+    let _ = conn.execute_batch("ALTER TABLE books ADD COLUMN openlibrary_key TEXT;");
+
     Ok(())
 }
 
@@ -149,8 +156,8 @@ pub fn init_db(db_path: &Path) -> Result<Connection> {
 
 pub fn insert_book(conn: &Connection, book: &Book) -> Result<()> {
     conn.execute(
-        "INSERT INTO books (id, title, author, file_path, cover_path, total_chapters, added_at, format, file_hash)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO books (id, title, author, file_path, cover_path, total_chapters, added_at, format, file_hash, description, genres, rating, isbn, openlibrary_key)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             book.id,
             book.title,
@@ -161,110 +168,53 @@ pub fn insert_book(conn: &Connection, book: &Book) -> Result<()> {
             book.added_at,
             book.format.to_string(),
             book.file_hash,
+            book.description,
+            book.genres,
+            book.rating,
+            book.isbn,
+            book.openlibrary_key,
         ],
     )?;
     Ok(())
 }
 
 pub fn get_book(conn: &Connection, id: &str) -> Result<Option<Book>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, title, author, file_path, cover_path, total_chapters, added_at, format, file_hash
-         FROM books WHERE id = ?1",
-    )?;
+    let sql = format!("SELECT {} FROM books WHERE id = ?1", BOOK_COLUMNS);
+    let mut stmt = conn.prepare(&sql)?;
     let mut rows = stmt.query(params![id])?;
     if let Some(row) = rows.next()? {
-        let format_str: String = row.get(7)?;
-        Ok(Some(Book {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            author: row.get(2)?,
-            file_path: row.get(3)?,
-            cover_path: row.get(4)?,
-            total_chapters: row.get(5)?,
-            added_at: row.get(6)?,
-            format: format_str
-                .parse()
-                .map_err(|e: String| rusqlite::Error::InvalidParameterName(e))?,
-            file_hash: row.get(8)?,
-        }))
+        Ok(Some(row_to_book(row)?))
     } else {
         Ok(None)
     }
 }
 
 pub fn get_book_by_file_path(conn: &Connection, file_path: &str) -> Result<Option<Book>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, title, author, file_path, cover_path, total_chapters, added_at, format, file_hash
-         FROM books WHERE file_path = ?1",
-    )?;
+    let sql = format!("SELECT {} FROM books WHERE file_path = ?1", BOOK_COLUMNS);
+    let mut stmt = conn.prepare(&sql)?;
     let mut rows = stmt.query(params![file_path])?;
     if let Some(row) = rows.next()? {
-        let format_str: String = row.get(7)?;
-        Ok(Some(Book {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            author: row.get(2)?,
-            file_path: row.get(3)?,
-            cover_path: row.get(4)?,
-            total_chapters: row.get(5)?,
-            added_at: row.get(6)?,
-            format: format_str
-                .parse()
-                .map_err(|e: String| rusqlite::Error::InvalidParameterName(e))?,
-            file_hash: row.get(8)?,
-        }))
+        Ok(Some(row_to_book(row)?))
     } else {
         Ok(None)
     }
 }
 
 pub fn get_book_by_file_hash(conn: &Connection, hash: &str) -> Result<Option<Book>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, title, author, file_path, cover_path, total_chapters, added_at, format, file_hash
-         FROM books WHERE file_hash = ?1",
-    )?;
+    let sql = format!("SELECT {} FROM books WHERE file_hash = ?1", BOOK_COLUMNS);
+    let mut stmt = conn.prepare(&sql)?;
     let mut rows = stmt.query(params![hash])?;
     if let Some(row) = rows.next()? {
-        let format_str: String = row.get(7)?;
-        Ok(Some(Book {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            author: row.get(2)?,
-            file_path: row.get(3)?,
-            cover_path: row.get(4)?,
-            total_chapters: row.get(5)?,
-            added_at: row.get(6)?,
-            format: format_str
-                .parse()
-                .map_err(|e: String| rusqlite::Error::InvalidParameterName(e))?,
-            file_hash: row.get(8)?,
-        }))
+        Ok(Some(row_to_book(row)?))
     } else {
         Ok(None)
     }
 }
 
 pub fn list_books(conn: &Connection) -> Result<Vec<Book>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, title, author, file_path, cover_path, total_chapters, added_at, format, file_hash
-         FROM books ORDER BY added_at DESC",
-    )?;
-    let rows = stmt.query_map([], |row| {
-        let format_str: String = row.get(7)?;
-        Ok(Book {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            author: row.get(2)?,
-            file_path: row.get(3)?,
-            cover_path: row.get(4)?,
-            total_chapters: row.get(5)?,
-            added_at: row.get(6)?,
-            format: format_str
-                .parse()
-                .map_err(|e: String| rusqlite::Error::InvalidParameterName(e))?,
-            file_hash: row.get(8)?,
-        })
-    })?;
+    let sql = format!("SELECT {} FROM books ORDER BY added_at DESC", BOOK_COLUMNS);
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([], row_to_book)?;
     rows.collect()
 }
 
@@ -272,7 +222,9 @@ pub fn update_book(conn: &Connection, book: &Book) -> Result<()> {
     // file_hash is immutable after import — not included in update
     conn.execute(
         "UPDATE books SET title=?2, author=?3, file_path=?4, cover_path=?5,
-         total_chapters=?6, added_at=?7, format=?8 WHERE id=?1",
+         total_chapters=?6, added_at=?7, format=?8,
+         description=?9, genres=?10, rating=?11, isbn=?12, openlibrary_key=?13
+         WHERE id=?1",
         params![
             book.id,
             book.title,
@@ -282,6 +234,11 @@ pub fn update_book(conn: &Connection, book: &Book) -> Result<()> {
             book.total_chapters,
             book.added_at,
             book.format.to_string(),
+            book.description,
+            book.genres,
+            book.rating,
+            book.isbn,
+            book.openlibrary_key,
         ],
     )?;
     Ok(())
@@ -289,6 +246,22 @@ pub fn update_book(conn: &Connection, book: &Book) -> Result<()> {
 
 pub fn delete_book(conn: &Connection, id: &str) -> Result<()> {
     conn.execute("DELETE FROM books WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+pub fn update_book_enrichment(
+    conn: &Connection,
+    book_id: &str,
+    description: Option<&str>,
+    genres: Option<&str>,
+    rating: Option<f64>,
+    isbn: Option<&str>,
+    openlibrary_key: Option<&str>,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE books SET description=?2, genres=?3, rating=?4, isbn=?5, openlibrary_key=?6 WHERE id=?1",
+        params![book_id, description, genres, rating, isbn, openlibrary_key],
+    )?;
     Ok(())
 }
 
@@ -360,13 +333,11 @@ pub fn get_reading_progress(conn: &Connection, book_id: &str) -> Result<Option<R
 }
 
 pub fn get_recently_read_books(conn: &Connection, limit: u32) -> Result<Vec<Book>> {
-    let mut stmt = conn.prepare(
-        "SELECT b.id, b.title, b.author, b.file_path, b.cover_path, b.total_chapters, b.added_at, b.format, b.file_hash
-         FROM books b
-         JOIN reading_progress rp ON rp.book_id = b.id
-         ORDER BY rp.last_read_at DESC
-         LIMIT ?1",
-    )?;
+    let sql = format!(
+        "SELECT {} FROM books b JOIN reading_progress rp ON rp.book_id = b.id ORDER BY rp.last_read_at DESC LIMIT ?1",
+        BOOK_COLUMNS_B
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params![limit], row_to_book)?;
     rows.collect()
 }
@@ -414,6 +385,12 @@ pub fn delete_bookmark(conn: &Connection, id: &str) -> Result<()> {
 
 // --- Collections CRUD ---
 
+/// Standard column list for SELECT queries on books.
+const BOOK_COLUMNS: &str = "id, title, author, file_path, cover_path, total_chapters, added_at, format, file_hash, description, genres, rating, isbn, openlibrary_key";
+
+/// Standard column list prefixed with table alias `b.`.
+const BOOK_COLUMNS_B: &str = "b.id, b.title, b.author, b.file_path, b.cover_path, b.total_chapters, b.added_at, b.format, b.file_hash, b.description, b.genres, b.rating, b.isbn, b.openlibrary_key";
+
 fn row_to_book(row: &rusqlite::Row) -> rusqlite::Result<Book> {
     let format_str: String = row.get(7)?;
     Ok(Book {
@@ -428,6 +405,11 @@ fn row_to_book(row: &rusqlite::Row) -> rusqlite::Result<Book> {
             .parse()
             .map_err(|e: String| rusqlite::Error::InvalidParameterName(e))?,
         file_hash: row.get(8)?,
+        description: row.get(9)?,
+        genres: row.get(10)?,
+        rating: row.get(11)?,
+        isbn: row.get(12)?,
+        openlibrary_key: row.get(13)?,
     })
 }
 
@@ -798,13 +780,11 @@ pub fn get_books_in_collection(conn: &Connection, collection_id: &str) -> Result
     let coll_type: String = type_stmt.query_row(params![collection_id], |row| row.get(0))?;
 
     if coll_type == "manual" {
-        let mut stmt = conn.prepare(
-            "SELECT b.id, b.title, b.author, b.file_path, b.cover_path, b.total_chapters, b.added_at, b.format, b.file_hash
-             FROM books b
-             JOIN book_collections bc ON bc.book_id = b.id
-             WHERE bc.collection_id = ?1
-             ORDER BY bc.added_at DESC",
-        )?;
+        let sql = format!(
+            "SELECT {} FROM books b JOIN book_collections bc ON bc.book_id = b.id WHERE bc.collection_id = ?1 ORDER BY bc.added_at DESC",
+            BOOK_COLUMNS_B
+        );
+        let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params![collection_id], row_to_book)?;
         return rows.collect();
     }
@@ -871,11 +851,12 @@ pub fn get_books_in_collection(conn: &Connection, collection_id: &str) -> Result
     };
 
     let sql = format!(
-        "SELECT b.id, b.title, b.author, b.file_path, b.cover_path, b.total_chapters, b.added_at, b.format, b.file_hash
+        "SELECT {cols}
          FROM books b
          {joins}
          {where_str}
-         ORDER BY b.added_at DESC"
+         ORDER BY b.added_at DESC",
+        cols = BOOK_COLUMNS_B
     );
 
     let mut stmt = conn.prepare(&sql)?;
@@ -907,6 +888,11 @@ mod tests {
             added_at: 1700000000,
             format: BookFormat::Epub,
             file_hash: None,
+            description: None,
+            genres: None,
+            rating: None,
+            isbn: None,
+            openlibrary_key: None,
         }
     }
 

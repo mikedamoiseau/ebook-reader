@@ -22,6 +22,11 @@ interface Book {
   total_chapters: number;
   added_at: number;
   format: "epub" | "cbz" | "cbr" | "pdf";
+  description: string | null;
+  genres: string | null;
+  rating: number | null;
+  isbn: string | null;
+  openlibrary_key: string | null;
 }
 
 interface ReadingProgress {
@@ -669,6 +674,10 @@ export default function Library() {
           bookId={editingBook.id}
           initialTitle={editingBook.title}
           initialAuthor={editingBook.author}
+          description={editingBook.description}
+          genres={editingBook.genres}
+          rating={editingBook.rating}
+          openlibraryKey={editingBook.openlibrary_key}
           onClose={() => setEditingBook(null)}
           onSaved={() => {
             setEditingBook(null);

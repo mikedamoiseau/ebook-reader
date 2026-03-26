@@ -5,6 +5,7 @@ pub mod db;
 pub mod epub;
 pub mod models;
 pub mod opds;
+pub mod openlibrary;
 pub mod pdf;
 
 use commands::AppState;
@@ -128,6 +129,8 @@ pub fn run() {
             commands::create_profile,
             commands::switch_profile,
             commands::delete_profile,
+            commands::search_openlibrary,
+            commands::enrich_book_from_openlibrary,
             commands::get_opds_catalogs,
             commands::add_opds_catalog,
             commands::remove_opds_catalog,

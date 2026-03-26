@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#c2714e"/>
+      <stop offset="100%" stop-color="#a85d3a"/>
+    </linearGradient>
+    <linearGradient id="page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#faf6f0"/>
+      <stop offset="100%" stop-color="#f0e8dc"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background -->
+  <rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
+
+  <!-- Book spine shadow -->
+  <path d="M512 240 L512 784" stroke="#9e5535" stroke-width="8" opacity="0.3"/>
+
+  <!-- Left page -->
+  <path d="M492 280 C492 280 380 290 300 310 C280 315 270 330 270 350 L270 700 C270 720 285 735 305 730 C385 710 492 700 492 700 Z" fill="url(#page)" opacity="0.95"/>
+
+  <!-- Right page -->
+  <path d="M532 280 C532 280 644 290 724 310 C744 315 754 330 754 350 L754 700 C754 720 739 735 719 730 C639 710 532 700 532 700 Z" fill="url(#page)"/>
+
+  <!-- Left page lines -->
+  <line x1="320" y1="380" x2="460" y2="365" stroke="#c2714e" stroke-width="6" opacity="0.25" stroke-linecap="round"/>
+  <line x1="320" y1="430" x2="450" y2="418" stroke="#c2714e" stroke-width="6" opacity="0.2" stroke-linecap="round"/>
+  <line x1="320" y1="480" x2="440" y2="470" stroke="#c2714e" stroke-width="6" opacity="0.15" stroke-linecap="round"/>
+  <line x1="320" y1="530" x2="460" y2="522" stroke="#c2714e" stroke-width="6" opacity="0.2" stroke-linecap="round"/>
+  <line x1="320" y1="580" x2="430" y2="574" stroke="#c2714e" stroke-width="6" opacity="0.15" stroke-linecap="round"/>
+
+  <!-- Right page lines -->
+  <line x1="564" y1="365" x2="704" y2="380" stroke="#c2714e" stroke-width="6" opacity="0.25" stroke-linecap="round"/>
+  <line x1="574" y1="418" x2="704" y2="430" stroke="#c2714e" stroke-width="6" opacity="0.2" stroke-linecap="round"/>
+  <line x1="584" y1="470" x2="704" y2="480" stroke="#c2714e" stroke-width="6" opacity="0.15" stroke-linecap="round"/>
+  <line x1="564" y1="522" x2="704" y2="530" stroke="#c2714e" stroke-width="6" opacity="0.2" stroke-linecap="round"/>
+  <line x1="574" y1="574" x2="694" y2="580" stroke="#c2714e" stroke-width="6" opacity="0.15" stroke-linecap="round"/>
+
+  <!-- Center spine highlight -->
+  <path d="M512 280 L512 700" stroke="#faf6f0" stroke-width="4" opacity="0.5"/>
+
+  <!-- Subtle bookmark ribbon -->
+  <path d="M620 240 L620 370 L645 345 L670 370 L670 240" fill="#e8a55d" opacity="0.9"/>
+</svg>

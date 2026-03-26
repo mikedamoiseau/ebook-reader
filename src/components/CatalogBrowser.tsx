@@ -291,16 +291,21 @@ export default function CatalogBrowser({ onClose, onBookImported }: CatalogBrows
                     className={`flex items-start gap-3 px-5 py-3 border-b border-warm-border/50 ${isNav ? "hover:bg-warm-subtle cursor-pointer" : ""} transition-colors`}
                     onClick={isNav ? () => browseTo(entry.navUrl!, entry.title) : undefined}
                   >
-                    {/* Cover thumbnail */}
-                    {entry.coverUrl ? (
-                      <img src={entry.coverUrl} alt="" className="w-12 h-16 object-cover rounded shrink-0 bg-warm-subtle" />
-                    ) : (
+                    {/* Cover thumbnail — only for book entries, not nav */}
+                    {!isNav && entry.coverUrl ? (
+                      <img
+                        src={entry.coverUrl}
+                        alt=""
+                        className="w-12 h-16 object-cover rounded shrink-0 bg-warm-subtle"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                      />
+                    ) : !isNav ? (
                       <div className="w-12 h-16 rounded bg-warm-subtle shrink-0 flex items-center justify-center">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-ink-muted/40">
                           <path d="M4 19.5v-15A2.5 2.5 0 016.5 2H20v20H6.5a2.5 2.5 0 010-5H20" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       </div>
-                    )}
+                    ) : null}
 
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-ink leading-snug">{entry.title}</p>

@@ -7,10 +7,25 @@ interface Tag {
   name: string;
 }
 
+interface OpenLibraryResult {
+  key: string;
+  title: string;
+  author: string;
+  description: string | null;
+  genres: string[];
+  rating: number | null;
+  isbn: string | null;
+  coverUrl: string | null;
+}
+
 interface EditBookDialogProps {
   bookId: string;
   initialTitle: string;
   initialAuthor: string;
+  description?: string | null;
+  genres?: string | null;
+  rating?: number | null;
+  openlibraryKey?: string | null;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -19,6 +34,10 @@ export default function EditBookDialog({
   bookId,
   initialTitle,
   initialAuthor,
+  description: initialDescription,
+  genres: initialGenres,
+  rating: initialRating,
+  openlibraryKey: initialOlKey,
   onClose,
   onSaved,
 }: EditBookDialogProps) {
@@ -26,6 +45,16 @@ export default function EditBookDialog({
   const [author, setAuthor] = useState(initialAuthor);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // OpenLibrary
+  const [olResults, setOlResults] = useState<OpenLibraryResult[]>([]);
+  const [olSearching, setOlSearching] = useState(false);
+  const [olEnriched, setOlEnriched] = useState(!!initialOlKey);
+  const [bookDescription, setBookDescription] = useState(initialDescription ?? "");
+  const [bookGenres, setBookGenres] = useState<string[]>(() => {
+    try { return initialGenres ? JSON.parse(initialGenres) : []; } catch { return []; }
+  });
+  const [bookRating, setBookRating] = useState(initialRating);
 
   // Tags
   const [bookTags, setBookTags] = useState<Tag[]>([]);
@@ -84,6 +113,46 @@ export default function EditBookDialog({
         author: author !== initialAuthor ? author : null,
       });
       onSaved();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleOlSearch = async () => {
+    setOlSearching(true);
+    setError(null);
+    try {
+      const results = await invoke<OpenLibraryResult[]>("search_openlibrary", {
+        title,
+        author: author || null,
+      });
+      setOlResults(results);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setOlSearching(false);
+    }
+  };
+
+  const handleOlEnrich = async (result: OpenLibraryResult) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await invoke<{
+        description: string | null;
+        genres: string | null;
+        rating: number | null;
+      }>("enrich_book_from_openlibrary", {
+        bookId,
+        openlibraryKey: result.key,
+      });
+      setBookDescription(updated.description ?? "");
+      try { setBookGenres(updated.genres ? JSON.parse(updated.genres) : []); } catch { setBookGenres([]); }
+      setBookRating(updated.rating);
+      setOlEnriched(true);
+      setOlResults([]);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -206,6 +275,58 @@ export default function EditBookDialog({
             >
               Change cover image…
             </button>
+
+            {/* OpenLibrary enrichment */}
+            <div>
+              <label className="block text-xs font-medium text-ink-muted mb-1">Metadata from OpenLibrary</label>
+              {olEnriched && bookDescription ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-ink leading-relaxed line-clamp-4">{bookDescription}</p>
+                  {bookGenres.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {bookGenres.slice(0, 6).map((g) => (
+                        <span key={g} className="px-1.5 py-0.5 text-[10px] bg-warm-subtle rounded text-ink-muted">{g}</span>
+                      ))}
+                    </div>
+                  )}
+                  {bookRating != null && (
+                    <p className="text-xs text-ink-muted">Rating: {bookRating.toFixed(1)} / 5</p>
+                  )}
+                </div>
+              ) : olResults.length > 0 ? (
+                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {olResults.map((r) => (
+                    <button
+                      key={r.key}
+                      type="button"
+                      onClick={() => handleOlEnrich(r)}
+                      disabled={saving}
+                      className="w-full text-left p-2 bg-warm-subtle hover:bg-warm-border rounded-lg transition-colors flex items-start gap-2"
+                    >
+                      {r.coverUrl && (
+                        <img src={r.coverUrl} alt="" className="w-8 h-11 object-cover rounded shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-ink truncate">{r.title}</p>
+                        <p className="text-[10px] text-ink-muted truncate">{r.author}</p>
+                        {r.rating != null && (
+                          <p className="text-[10px] text-ink-muted">{r.rating.toFixed(1)} / 5</p>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleOlSearch}
+                  disabled={olSearching || saving}
+                  className="w-full py-2 text-sm text-ink-muted bg-warm-subtle hover:bg-warm-border rounded-lg transition-colors border border-dashed border-warm-border disabled:opacity-40"
+                >
+                  {olSearching ? "Searching…" : "Look up on OpenLibrary"}
+                </button>
+              )}
+            </div>
 
             {error && (
               <p className="text-xs text-red-600">{error}</p>
