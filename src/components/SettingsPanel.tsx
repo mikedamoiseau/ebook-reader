@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openFolderPicker } from "@tauri-apps/plugin-dialog";
 import { useTheme, MIN_FONT_SIZE, MAX_FONT_SIZE } from "../context/ThemeContext";
+import ActivityLog from "./ActivityLog";
 
 interface SettingsPanelProps {
   open: boolean;
@@ -95,6 +96,9 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
 
   // Enrichment providers
   const [enrichmentProviders, setEnrichmentProviders] = useState<EnrichmentProviderInfo[]>([]);
+
+  // Activity log state
+  const [showActivityLog, setShowActivityLog] = useState(false);
 
   // Remote backup state
   const [backupProviders, setBackupProviders] = useState<ProviderInfo[]>([]);
@@ -640,6 +644,14 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
             </div>
           </section>
 
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted mb-3">Activity</h3>
+            <button type="button" onClick={() => setShowActivityLog(true)}
+              className="w-full px-3 py-2 text-sm text-ink-muted hover:text-ink bg-warm-subtle hover:bg-warm-border rounded-xl transition-colors text-left">
+              View activity log
+            </button>
+          </section>
+
           {backupProviders.length > 0 && (
             <section>
               <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted mb-3">
@@ -764,6 +776,8 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
           )}
         </div>
       </div>
+
+      {showActivityLog && <ActivityLog onClose={() => setShowActivityLog(false)} />}
 
       {/* Migration confirmation dialog */}
       {migrationDialog && (
