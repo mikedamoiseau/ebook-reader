@@ -136,6 +136,11 @@ fn run_schema(conn: &Connection) -> Result<()> {
     let _ =
         conn.execute_batch("UPDATE highlights SET updated_at = created_at WHERE updated_at = 0;");
 
+    // Index on bookmarks.book_id for list_bookmarks() and cascade delete performance
+    let _ = conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_bookmarks_book_id ON bookmarks(book_id);",
+    );
+
     Ok(())
 }
 
@@ -1265,5 +1270,18 @@ mod tests {
             )
             .unwrap();
         assert!(val.is_none());
+    }
+
+    #[test]
+    fn bookmarks_book_id_index_exists() {
+        let (_dir, conn) = setup();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_bookmarks_book_id'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "idx_bookmarks_book_id index should exist");
     }
 }
