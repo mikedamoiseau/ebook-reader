@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 // ---- Types ----
@@ -98,22 +98,37 @@ function CollectionRow({
   onDropBook: (bookId: string, collectionId: string) => void;
   isManual: boolean;
 }) {
-  const [isDragOver, setIsDragOver] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const dragCounter = useRef(0);
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!isManual) return;
+    e.preventDefault();
+    dragCounter.current++;
+    setIsDragOver(true);
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
     if (!isManual) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
-    setIsDragOver(true);
   };
 
-  const handleDragLeave = () => setIsDragOver(false);
+  const handleDragLeave = () => {
+    if (!isManual) return;
+    dragCounter.current--;
+    if (dragCounter.current <= 0) {
+      dragCounter.current = 0;
+      setIsDragOver(false);
+    }
+  };
 
   const handleDrop = (e: React.DragEvent) => {
     if (!isManual) return;
     e.preventDefault();
     e.stopPropagation();
+    dragCounter.current = 0;
     setIsDragOver(false);
     const bookId = e.dataTransfer.getData("text/plain");
     if (bookId) onDropBook(bookId, collection.id);
@@ -149,6 +164,7 @@ function CollectionRow({
           : "text-ink-muted hover:text-ink hover:bg-warm-subtle"
       }`}
       onClick={onSelect}
+      onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
