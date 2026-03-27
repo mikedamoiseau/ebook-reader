@@ -270,10 +270,11 @@ Tauri v2 supports mobile targets. The React frontend renders in a mobile WebView
 - ~~Designed for readers with dyslexia — weighted letterforms prevent visual rotation/flipping~~
 - ~~WOFF2 files bundled locally (Regular, Bold, Italic, Bold-Italic); 3-button font selector in settings~~
 
-#### 26. Star Ratings
-- 1-5 star rating per book
-- New DB column, small UI widget on book cards and edit dialog
-- Usable as a sort/filter criterion in the library
+#### 26. Star Ratings — **Done**
+- ~~1-5 star rating per book~~
+- ~~Interactive star picker in edit dialog; read-only star display on book cards~~
+- ~~Sort by rating; filter by minimum rating (1+ through 5 stars)~~
+- ~~Reuses existing `rating` column (user rating overrides enrichment value)~~
 
 ### Core Reading Gaps
 
@@ -294,10 +295,13 @@ Tauri v2 supports mobile targets. The React frontend renders in a mobile WebView
 - Font picker shows both built-in and user-added fonts
 - Fonts stored per-profile in the app data directory
 
-#### 30. Continuous Scroll Mode (EPUB)
-- Alternative to paginated chapter view — scroll through content continuously
-- Toggle between paginated and scroll modes in reader settings
-- Remember preference per book or globally
+#### 30. Continuous Scroll Mode (EPUB) — **Done**
+- ~~Alternative to paginated chapter view — scroll through content continuously~~
+- ~~Toggle between paginated and scroll modes in reader settings~~
+- ~~Global preference stored in localStorage~~
+- ~~Chapter dividers with title labels between chapters~~
+- ~~Progress tracking: detects visible chapter via scroll position, saves chapter-level progress~~
+- Future: lazy-load chapters on scroll instead of loading all upfront (optimization for large books)
 
 #### 31. Estimated Time to Finish
 - Track reading speed (words or pages per minute) per session
@@ -409,5 +413,5 @@ Lower priority features — high effort, niche audience, or dependent on other w
 | 5 | Multiple Profiles | Done | Multi-user |
 | 6 | Remote Library Access, OPDS Server | Not started | Remote access |
 | 7 | Android & iOS App | Not started | Mobile |
-| 8 | Sepia Theme, OpenDyslexic, Star Ratings, In-Book Search, Typography, Custom Fonts, Continuous Scroll, Time-to-Finish, Series, Activity Log, MOBI, Nav History, Custom CSS, Dual-Page/Manga, Animations, Split View | 2 done | Reader & library enhancements |
+| 8 | Sepia Theme, OpenDyslexic, Star Ratings, In-Book Search, Typography, Custom Fonts, Continuous Scroll, Time-to-Finish, Series, Activity Log, MOBI, Nav History, Custom CSS, Dual-Page/Manga, Animations, Split View | 4 done | Reader & library enhancements |
 | N/H | Dictionary, Vocabulary Builder, TTS, PDF Reflow, Library-Wide Search, Annotation Exports, Plugins/Hooks | Not started | Nice to have |

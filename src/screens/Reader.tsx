@@ -44,7 +44,7 @@ interface ReaderProps {
 export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderProps) {
   const { bookId } = useParams<{ bookId: string }>();
   const navigate = useNavigate();
-  const { fontSize, setFontSize, fontFamily } = useTheme();
+  const { fontSize, setFontSize, fontFamily, scrollMode } = useTheme();
 
   const [bookTitle, setBookTitle] = useState("");
   const [bookFormat, setBookFormat] = useState<"epub" | "cbz" | "cbr" | "pdf">("epub");
@@ -72,6 +72,12 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
   const dndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [chapterError, setChapterError] = useState<string | null>(null);
+
+  // Continuous scroll mode state
+  const [allChaptersHtml, setAllChaptersHtml] = useState<string[]>([]);
+  const [allChaptersLoaded, setAllChaptersLoaded] = useState(false);
+  const chapterDivRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const isContinuous = scrollMode === "continuous" && bookFormat === "epub";
 
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -147,10 +153,89 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
     };
   }, [bookId]);
 
+  // ---- Load all chapters for continuous scroll mode ----
+
+  useEffect(() => {
+    if (!bookId || loading || !isContinuous) {
+      setAllChaptersLoaded(false);
+      setAllChaptersHtml([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadAll() {
+      try {
+        const chapters = await invoke<string[]>("get_all_chapters", { bookId });
+        if (!cancelled) {
+          setAllChaptersHtml(chapters);
+          setAllChaptersLoaded(true);
+        }
+      } catch (err) {
+        if (!cancelled) setChapterError(friendlyError(String(err)));
+      }
+    }
+
+    loadAll();
+    return () => { cancelled = true; };
+  }, [bookId, loading, isContinuous]);
+
+  // ---- Scroll to saved chapter after all chapters load (continuous mode) ----
+
+  useEffect(() => {
+    if (!isContinuous || !allChaptersLoaded || restoringScroll.current === null) return;
+
+    const targetChapter = restoringScroll.current;
+    const scrollPos = savedScrollPosition.current;
+
+    // Wait for DOM to render all chapter divs
+    requestAnimationFrame(() => {
+      const chapterDiv = chapterDivRefs.current[targetChapter];
+      const container = scrollContainerRef.current;
+      if (chapterDiv && container) {
+        // Scroll to the target chapter div, then offset within it
+        const chapterTop = chapterDiv.offsetTop;
+        const chapterHeight = chapterDiv.offsetHeight;
+        container.scrollTop = chapterTop + (scrollPos ?? 0) * chapterHeight;
+      }
+      restoringScroll.current = null;
+      savedScrollPosition.current = null;
+    });
+  }, [allChaptersLoaded, isContinuous, chapterIndex]);
+
+  // ---- Track visible chapter in continuous scroll mode ----
+
+  useEffect(() => {
+    if (!isContinuous || !allChaptersLoaded) return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    function updateVisibleChapter() {
+      if (!container) return;
+      const containerTop = container.scrollTop;
+      const containerMid = containerTop + container.clientHeight / 3;
+
+      for (let i = chapterDivRefs.current.length - 1; i >= 0; i--) {
+        const div = chapterDivRefs.current[i];
+        if (div && div.offsetTop <= containerMid) {
+          setChapterIndex(i);
+          break;
+        }
+      }
+
+      // Update scroll progress as book-global 0-1
+      const maxScroll = container.scrollHeight - container.clientHeight;
+      setScrollProgress(maxScroll > 0 ? container.scrollTop / maxScroll : 0);
+    }
+
+    container.addEventListener("scroll", updateVisibleChapter, { passive: true });
+    return () => container.removeEventListener("scroll", updateVisibleChapter);
+  }, [isContinuous, allChaptersLoaded]);
+
   // ---- Load chapter content when chapterIndex changes ----
 
   useEffect(() => {
-    if (!bookId || loading) return;
+    if (!bookId || loading || isContinuous) return;
 
     let cancelled = false;
 
@@ -183,6 +268,7 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
   // ---- Restore scroll position after chapter HTML renders ----
 
   useEffect(() => {
+    if (isContinuous) return; // continuous mode has its own restore
     if (restoringScroll.current !== chapterIndex || !chapterHtml || !bookId) return;
 
     const scrollPos = savedScrollPosition.current;
@@ -201,6 +287,16 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
 
   // ---- Save reading progress ----
 
+  const getChapterScrollPosition = useCallback(() => {
+    if (!isContinuous) return scrollProgress;
+    const container = scrollContainerRef.current;
+    const chapterDiv = chapterDivRefs.current[chapterIndex];
+    if (!container || !chapterDiv) return 0;
+    const posInChapter = container.scrollTop - chapterDiv.offsetTop;
+    const chapterHeight = chapterDiv.offsetHeight;
+    return chapterHeight > 0 ? Math.max(0, Math.min(1, posInChapter / chapterHeight)) : 0;
+  }, [isContinuous, scrollProgress, chapterIndex]);
+
   const saveProgress = useCallback(
     async (scrollPos?: number) => {
       if (!bookId) return;
@@ -208,7 +304,7 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
         await invoke("save_reading_progress", {
           bookId,
           chapterIndex,
-          scrollPosition: scrollPos ?? scrollProgress,
+          scrollPosition: scrollPos ?? getChapterScrollPosition(),
         });
         setSaveIndicator(true);
         setTimeout(() => setSaveIndicator(false), 1500);
@@ -218,17 +314,19 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
         setTimeout(() => setSaveError(false), 2000);
       }
     },
-    [bookId, chapterIndex, scrollProgress]
+    [bookId, chapterIndex, getChapterScrollPosition]
   );
 
+  // Save progress on chapter change (paginated mode only — continuous tracks via scroll)
   useEffect(() => {
-    if (!bookId || loading) return;
+    if (!bookId || loading || isContinuous) return;
     saveProgress(0);
   }, [chapterIndex]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- Scroll tracking ----
+  // ---- Scroll tracking (paginated mode) ----
 
   useEffect(() => {
+    if (isContinuous) return; // continuous mode has its own tracking
     const container = scrollContainerRef.current;
     if (!container) return;
 
@@ -429,11 +527,20 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
   const goToChapter = useCallback(
     (index: number) => {
       if (index >= 0 && index < totalChapters) {
-        setChapterIndex(index);
+        if (isContinuous) {
+          // Scroll to the chapter div
+          const chapterDiv = chapterDivRefs.current[index];
+          const container = scrollContainerRef.current;
+          if (chapterDiv && container) {
+            container.scrollTop = chapterDiv.offsetTop;
+          }
+        } else {
+          setChapterIndex(index);
+        }
         setTocOpen(false);
       }
     },
-    [totalChapters]
+    [totalChapters, isContinuous]
   );
 
   const navigateToBookmark = useCallback(
@@ -871,8 +978,8 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
               ref={scrollContainerRef}
               className="flex-1 overflow-y-auto relative"
             >
-              {/* Floating prev/next arrows — visible when bottom nav is scrolled out of view */}
-              {!bottomNavVisible && bookFormat === "epub" && !dndMode && (
+              {/* Floating prev/next arrows — visible when bottom nav is scrolled out of view (paginated only) */}
+              {!isContinuous && !bottomNavVisible && bookFormat === "epub" && !dndMode && (
                 <>
                   {chapterIndex > 0 && (
                     <button
@@ -945,7 +1052,47 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
                 <div className="max-w-[680px] mx-auto px-8 py-10">
                   <p className="text-red-500 text-sm">Failed to load chapter: {chapterError}</p>
                 </div>
+              ) : isContinuous ? (
+                /* ── Continuous scroll: all chapters stacked ── */
+                allChaptersLoaded ? (
+                  <div ref={contentRef} className="max-w-[680px] mx-auto px-8 py-10">
+                    {allChaptersHtml.map((html, i) => {
+                      const chapterTitle = toc.find((t) => t.chapter_index === i)?.label;
+                      return (
+                        <div
+                          key={i}
+                          ref={(el) => { chapterDivRefs.current[i] = el; }}
+                          data-chapter-index={i}
+                        >
+                          {i > 0 && (
+                            <div className="my-10 flex items-center gap-4">
+                              <div className="flex-1 h-px bg-warm-border" />
+                              <span className="text-xs text-ink-muted font-medium shrink-0">
+                                {chapterTitle ?? `Chapter ${i + 1}`}
+                              </span>
+                              <div className="flex-1 h-px bg-warm-border" />
+                            </div>
+                          )}
+                          <div
+                            className="reader-content"
+                            style={{
+                              fontSize: `${fontSize}px`,
+                              lineHeight: 1.8,
+                              fontFamily: fontFamilyCss,
+                            }}
+                            dangerouslySetInnerHTML={{ __html: html }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center">
+                    <p className="text-sm text-ink-muted">Loading all chapters…</p>
+                  </div>
+                )
               ) : (
+                /* ── Paginated: single chapter ── */
                 <div
                   ref={contentRef}
                   className="reader-content max-w-[680px] mx-auto px-8 py-10"
@@ -958,32 +1105,34 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
                 />
               )}
 
-              {/* Chapter navigation */}
-              <div ref={chapterNavRef} className={`max-w-[680px] mx-auto px-8 pb-12 flex items-center justify-between gap-4 transition-opacity duration-300 ${dndMode && !dndShowControls ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
-                <button
-                  onClick={prevChapter}
-                  disabled={chapterIndex <= 0}
-                  className="flex items-center gap-1.5 px-4 py-2 text-sm text-ink-muted bg-warm-subtle hover:bg-warm-border rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                >
-                  <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
-                    <path d="M12 4l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  Previous
-                </button>
-                <span className="text-xs text-ink-muted tabular-nums">
-                  {chapterIndex + 1} / {totalChapters}
-                </span>
-                <button
-                  onClick={nextChapter}
-                  disabled={chapterIndex >= totalChapters - 1}
-                  className="flex items-center gap-1.5 px-4 py-2 text-sm text-ink-muted bg-warm-subtle hover:bg-warm-border rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                >
-                  Next
-                  <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
-                    <path d="M8 4l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </button>
-              </div>
+              {/* Chapter navigation (paginated only) */}
+              {!isContinuous && (
+                <div ref={chapterNavRef} className={`max-w-[680px] mx-auto px-8 pb-12 flex items-center justify-between gap-4 transition-opacity duration-300 ${dndMode && !dndShowControls ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
+                  <button
+                    onClick={prevChapter}
+                    disabled={chapterIndex <= 0}
+                    className="flex items-center gap-1.5 px-4 py-2 text-sm text-ink-muted bg-warm-subtle hover:bg-warm-border rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+                      <path d="M12 4l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    Previous
+                  </button>
+                  <span className="text-xs text-ink-muted tabular-nums">
+                    {chapterIndex + 1} / {totalChapters}
+                  </span>
+                  <button
+                    onClick={nextChapter}
+                    disabled={chapterIndex >= totalChapters - 1}
+                    className="flex items-center gap-1.5 px-4 py-2 text-sm text-ink-muted bg-warm-subtle hover:bg-warm-border rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                  >
+                    Next
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+                      <path d="M8 4l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Progress bar */}

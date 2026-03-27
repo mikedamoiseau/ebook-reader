@@ -259,7 +259,7 @@ function formatBytes(bytes: number): string {
 }
 
 export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
-  const { mode, setMode, customColors, setCustomColors, fontSize, setFontSize, fontFamily, setFontFamily } =
+  const { mode, setMode, customColors, setCustomColors, fontSize, setFontSize, fontFamily, setFontFamily, scrollMode, setScrollMode } =
     useTheme();
   const panelRef = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
@@ -696,6 +696,31 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
               }}
             >
               The quick brown fox jumps over the lazy dog.
+            </p>
+          </Accordion>
+
+          {/* Scroll mode */}
+          <Accordion title="EPUB Reading Mode" defaultOpen>
+            <div className="flex gap-1 bg-warm-subtle rounded-xl p-1">
+              {(["paginated", "continuous"] as const).map((option) => (
+                <button
+                  type="button"
+                  key={option}
+                  onClick={() => setScrollMode(option)}
+                  className={`flex-1 px-3 py-2 text-sm rounded-lg capitalize transition-all duration-150 ${
+                    scrollMode === option
+                      ? "bg-surface text-ink shadow-sm font-medium"
+                      : "text-ink-muted hover:text-ink"
+                  }`}
+                >
+                  {option === "paginated" ? "Paginated" : "Continuous"}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-ink-muted">
+              {scrollMode === "continuous"
+                ? "Scroll through all chapters in one continuous flow."
+                : "Read one chapter at a time with prev/next navigation."}
             </p>
           </Accordion>
 

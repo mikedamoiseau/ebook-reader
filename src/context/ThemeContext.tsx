@@ -21,6 +21,7 @@ export type { ColorMode, ColorTokens };
 
 type ResolvedTheme = "light" | "dark";
 type FontFamily = "serif" | "sans-serif" | "dyslexic";
+type ScrollMode = "paginated" | "continuous";
 
 interface ThemeContextValue {
   mode: ColorMode;
@@ -32,6 +33,8 @@ interface ThemeContextValue {
   setFontSize: (size: number) => void;
   fontFamily: FontFamily;
   setFontFamily: (family: FontFamily) => void;
+  scrollMode: ScrollMode;
+  setScrollMode: (mode: ScrollMode) => void;
 }
 
 const STORAGE_KEYS = {
@@ -39,6 +42,7 @@ const STORAGE_KEYS = {
   customColors: "ebook-reader-custom-colors",
   fontSize: "ebook-reader-font-size",
   fontFamily: "ebook-reader-font-family",
+  scrollMode: "ebook-reader-scroll-mode",
 } as const;
 
 export const MIN_FONT_SIZE = 14;
@@ -95,12 +99,19 @@ function loadStoredFontFamily(): FontFamily {
   return "serif";
 }
 
+function loadStoredScrollMode(): ScrollMode {
+  const stored = localStorage.getItem(STORAGE_KEYS.scrollMode);
+  if (stored === "paginated" || stored === "continuous") return stored;
+  return "paginated";
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ColorMode>(loadStoredMode);
   const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(getSystemTheme);
   const [customColors, setCustomColorsState] = useState<ColorTokens>(loadStoredCustomColors);
   const [fontSize, setFontSizeState] = useState(loadStoredFontSize);
   const [fontFamily, setFontFamilyState] = useState<FontFamily>(loadStoredFontFamily);
+  const [scrollMode, setScrollModeState] = useState<ScrollMode>(loadStoredScrollMode);
 
   // For dark: variant purposes, sepia and custom resolve to "light"
   const resolved: ResolvedTheme =
@@ -160,6 +171,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(STORAGE_KEYS.fontFamily, family);
   }, []);
 
+  const setScrollMode = useCallback((sm: ScrollMode) => {
+    setScrollModeState(sm);
+    localStorage.setItem(STORAGE_KEYS.scrollMode, sm);
+  }, []);
+
   return (
     <ThemeContext.Provider
       value={{
@@ -167,6 +183,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         customColors, setCustomColors,
         fontSize, setFontSize,
         fontFamily, setFontFamily,
+        scrollMode, setScrollMode,
       }}
     >
       {children}
