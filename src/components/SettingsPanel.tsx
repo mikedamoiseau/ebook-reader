@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openFolderPicker } from "@tauri-apps/plugin-dialog";
-import { useTheme, MIN_FONT_SIZE, MAX_FONT_SIZE } from "../context/ThemeContext";
+import { useTheme, MIN_FONT_SIZE, MAX_FONT_SIZE, type ColorTokens } from "../context/ThemeContext";
+import {
+  SEPIA_TOKENS,
+  LIGHT_TOKENS,
+  deriveTokensFromBase,
+} from "../lib/themes";
 import ActivityLog from "./ActivityLog";
 
 function Accordion({ title, children, defaultOpen = false }: { title: string; children: ReactNode; defaultOpen?: boolean }) {
@@ -28,6 +33,159 @@ function Accordion({ title, children, defaultOpen = false }: { title: string; ch
       </button>
       {open && <div className="mt-3">{children}</div>}
     </section>
+  );
+}
+
+// ── Custom color theme editor ───────────────────────────────
+
+const TOKEN_GROUPS: Array<{
+  label: string;
+  tokens: Array<{ key: keyof ColorTokens; label: string }>;
+}> = [
+  {
+    label: "Accent",
+    tokens: [
+      { key: "accent", label: "Accent" },
+      { key: "accent-hover", label: "Hover" },
+      { key: "accent-light", label: "Light bg" },
+    ],
+  },
+  {
+    label: "Surface",
+    tokens: [
+      { key: "surface", label: "Card" },
+      { key: "ink-muted", label: "Muted text" },
+      { key: "warm-border", label: "Border" },
+      { key: "warm-subtle", label: "Subtle fill" },
+    ],
+  },
+];
+
+function CustomColorEditor({
+  customColors,
+  setCustomColors,
+}: {
+  customColors: ColorTokens;
+  setCustomColors: (c: ColorTokens) => void;
+}) {
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const updateColor = (key: keyof ColorTokens, value: string) => {
+    setCustomColors({ ...customColors, [key]: value });
+  };
+
+  const updateBaseAndDerive = (key: "paper" | "ink", value: string) => {
+    const paper = key === "paper" ? value : customColors.paper;
+    const ink = key === "ink" ? value : customColors.ink;
+    const derived = deriveTokensFromBase(paper, ink);
+    setCustomColors(derived);
+  };
+
+  return (
+    <div className="space-y-3 rounded-xl bg-warm-subtle p-3">
+      {/* Primary pickers: Background + Text */}
+      <div className="flex gap-3">
+        <ColorInput
+          label="Background"
+          value={customColors.paper}
+          onChange={(v) => updateBaseAndDerive("paper", v)}
+        />
+        <ColorInput
+          label="Text"
+          value={customColors.ink}
+          onChange={(v) => updateBaseAndDerive("ink", v)}
+        />
+      </div>
+
+      {/* Live preview */}
+      <div
+        className="rounded-lg px-3 py-2 text-sm leading-relaxed"
+        style={{ backgroundColor: customColors.paper, color: customColors.ink }}
+      >
+        The quick brown fox jumps over the lazy dog.
+      </div>
+
+      {/* Advanced toggle */}
+      <button
+        type="button"
+        onClick={() => setShowAdvanced(!showAdvanced)}
+        className="text-xs text-ink-muted hover:text-ink transition-colors"
+      >
+        {showAdvanced ? "Hide" : "Show"} advanced colors
+      </button>
+
+      {/* Advanced token grid */}
+      {showAdvanced && (
+        <div className="space-y-3">
+          {TOKEN_GROUPS.map((group) => (
+            <div key={group.label}>
+              <p className="text-xs text-ink-muted mb-1.5">{group.label}</p>
+              <div className="flex flex-wrap gap-2">
+                {group.tokens.map(({ key, label }) => (
+                  <ColorInput
+                    key={key}
+                    label={label}
+                    value={customColors[key]}
+                    onChange={(v) => updateColor(key, v)}
+                    compact
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Preset shortcuts */}
+      <div className="flex gap-2 pt-1">
+        <button
+          type="button"
+          onClick={() => setCustomColors({ ...SEPIA_TOKENS })}
+          className="flex-1 px-2 py-1.5 text-xs rounded-lg border border-warm-border text-ink-muted hover:text-ink hover:border-ink-muted transition-colors"
+        >
+          Reset to sepia
+        </button>
+        <button
+          type="button"
+          onClick={() => setCustomColors({ ...LIGHT_TOKENS })}
+          className="flex-1 px-2 py-1.5 text-xs rounded-lg border border-warm-border text-ink-muted hover:text-ink hover:border-ink-muted transition-colors"
+        >
+          Reset to light
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ColorInput({
+  label,
+  value,
+  onChange,
+  compact = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  compact?: boolean;
+}) {
+  return (
+    <label className={`flex items-center gap-2 ${compact ? "" : "flex-1"}`}>
+      <div className="relative">
+        <input
+          type="color"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+        />
+        <div
+          className={`${compact ? "w-6 h-6" : "w-8 h-8"} rounded-lg border border-warm-border shadow-sm cursor-pointer`}
+          style={{ backgroundColor: value }}
+        />
+      </div>
+      <span className={`${compact ? "text-xs" : "text-sm"} text-ink-muted`}>
+        {label}
+      </span>
+    </label>
   );
 }
 
@@ -101,7 +259,7 @@ function formatBytes(bytes: number): string {
 }
 
 export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
-  const { mode, setMode, fontSize, setFontSize, fontFamily, setFontFamily } =
+  const { mode, setMode, customColors, setCustomColors, fontSize, setFontSize, fontFamily, setFontFamily } =
     useTheme();
   const panelRef = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
@@ -416,20 +574,45 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
         <div className="flex-1 overflow-y-auto p-5 space-y-7">
           {/* Theme */}
           <Accordion title="Appearance" defaultOpen>
-            <div className="flex gap-1 bg-warm-subtle rounded-xl p-1">
-              {(["light", "dark", "system"] as const).map((option) => (
-                <button
-                  key={option}
-                  onClick={() => setMode(option)}
-                  className={`flex-1 px-3 py-2 text-sm rounded-lg capitalize transition-all duration-150 ${
-                    mode === option
-                      ? "bg-surface text-ink shadow-sm font-medium"
-                      : "text-ink-muted hover:text-ink"
-                  }`}
-                >
-                  {option}
-                </button>
-              ))}
+            <div className="space-y-3">
+              {/* Preset mode buttons */}
+              <div className="flex gap-1 bg-warm-subtle rounded-xl p-1">
+                {(["light", "sepia", "dark", "system"] as const).map((option) => (
+                  <button
+                    type="button"
+                    key={option}
+                    onClick={() => setMode(option)}
+                    className={`flex-1 px-2 py-2 text-sm rounded-lg capitalize transition-all duration-150 ${
+                      mode === option
+                        ? "bg-surface text-ink shadow-sm font-medium"
+                        : "text-ink-muted hover:text-ink"
+                    }`}
+                  >
+                    {option === "system" ? "Auto" : option}
+                  </button>
+                ))}
+              </div>
+
+              {/* Custom theme toggle */}
+              <button
+                type="button"
+                onClick={() => setMode(mode === "custom" ? "light" : "custom")}
+                className={`w-full px-3 py-2 text-sm rounded-lg border transition-all duration-150 ${
+                  mode === "custom"
+                    ? "border-accent bg-accent-light text-ink font-medium"
+                    : "border-warm-border text-ink-muted hover:text-ink hover:border-ink-muted"
+                }`}
+              >
+                Custom colors
+              </button>
+
+              {/* Custom color editor */}
+              {mode === "custom" && (
+                <CustomColorEditor
+                  customColors={customColors}
+                  setCustomColors={setCustomColors}
+                />
+              )}
             </div>
           </Accordion>
 
@@ -473,33 +656,43 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
           {/* Font family */}
           <Accordion title="Reading Font" defaultOpen>
             <div className="flex gap-1 bg-warm-subtle rounded-xl p-1">
-              {(["serif", "sans-serif"] as const).map((option) => (
-                <button
-                  key={option}
-                  onClick={() => setFontFamily(option)}
-                  className={`flex-1 px-3 py-2.5 text-sm rounded-lg transition-all duration-150 ${
-                    fontFamily === option
-                      ? "bg-surface text-ink shadow-sm font-medium"
-                      : "text-ink-muted hover:text-ink"
-                  }`}
-                  style={{
-                    fontFamily:
-                      option === "serif"
-                        ? '"Lora", Georgia, serif'
-                        : '"DM Sans", system-ui, sans-serif',
-                  }}
-                >
-                  {option === "serif" ? "Lora" : "DM Sans"}
-                </button>
-              ))}
+              {(["serif", "sans-serif", "dyslexic"] as const).map((option) => {
+                const fontCss =
+                  option === "serif"
+                    ? '"Lora Variable", Georgia, serif'
+                    : option === "dyslexic"
+                      ? '"OpenDyslexic", sans-serif'
+                      : '"DM Sans Variable", system-ui, sans-serif';
+                const label =
+                  option === "serif" ? "Lora"
+                  : option === "dyslexic" ? "OpenDyslexic"
+                  : "DM Sans";
+                return (
+                  <button
+                    type="button"
+                    key={option}
+                    onClick={() => setFontFamily(option)}
+                    className={`flex-1 px-2 py-2.5 text-sm rounded-lg transition-all duration-150 ${
+                      fontFamily === option
+                        ? "bg-surface text-ink shadow-sm font-medium"
+                        : "text-ink-muted hover:text-ink"
+                    }`}
+                    style={{ fontFamily: fontCss }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
             <p
               className="mt-3 text-sm text-ink-muted leading-relaxed"
               style={{
                 fontFamily:
                   fontFamily === "serif"
-                    ? '"Lora", Georgia, serif'
-                    : '"DM Sans", system-ui, sans-serif',
+                    ? '"Lora Variable", Georgia, serif'
+                    : fontFamily === "dyslexic"
+                      ? '"OpenDyslexic", sans-serif'
+                      : '"DM Sans Variable", system-ui, sans-serif',
               }}
             >
               The quick brown fox jumps over the lazy dog.
