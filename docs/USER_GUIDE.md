@@ -92,14 +92,15 @@ When you import a book, Folio copies the file into its own managed library folde
 
 ### Viewing your books
 
-Books are shown as a cover grid. Each card displays the cover image, title, author, a progress percentage badge, and a format badge for non-EPUB books. A "Continue Reading" row at the top shows your 5 most recently read books.
+Books are shown as a cover grid. Each card displays the cover image, title, author, star rating (if set), a progress percentage badge, and a format badge for non-EPUB books. A "Continue Reading" row at the top shows your 5 most recently read books.
 
 ### Searching and filtering
 
 - **Search:** Type in the search bar to filter by title or author. Results update as you type.
 - **Format filter:** Filter by All, EPUB, PDF, CBZ, or CBR.
 - **Status filter:** Filter by All, Unread, In Progress, or Finished.
-- **Sorting:** Sort by date added, title, author, last read, or progress — ascending or descending.
+- **Rating filter:** Filter by minimum star rating (1+ through 5 stars).
+- **Sorting:** Sort by date added, title, author, last read, progress, or rating — ascending or descending.
 
 All filters combine, so you can search for "asimov" within "epub" books that are "in progress."
 
@@ -126,10 +127,18 @@ Define rules and Folio populates the collection automatically. Available rule ty
 
 | Field | Operators |
 |-------|-----------|
-| Author | contains (substring match) |
-| Format | equals (epub, pdf, cbz, cbr) |
+| Author | contains |
+| Title | contains |
+| Series | contains, is |
+| Language | is, contains |
+| Publisher | contains |
+| Description | contains |
+| Format | is (epub, pdf, cbz, cbr) |
+| Tag | is, contains |
 | Date added | within last N days |
 | Reading progress | is unread / in progress / finished |
+
+Multiple rules are combined with AND logic — a book must match all rules to appear in the collection.
 
 ### Collection options
 
@@ -148,9 +157,25 @@ Click any book card to open it. If you've read it before, Folio picks up where y
 
 ### EPUB reading
 
+Folio offers two reading modes for EPUBs, selectable in **Settings > EPUB Reading Mode**:
+
+**Paginated mode** (default) — read one chapter at a time:
+
 - **Chapter navigation:** Use the Previous/Next buttons at the bottom, press the left/right arrow keys, or pick a chapter from the Table of Contents.
+- Floating chapter arrows appear on the left/right edges when you scroll past the bottom navigation bar.
+
+**Continuous scroll mode** — all chapters in one long scrollable document:
+
+- All chapters are loaded and rendered as a single scrollable page with chapter title dividers between them.
+- Scroll naturally through the entire book — no prev/next buttons needed.
+- The Table of Contents still works: clicking a chapter scrolls directly to it.
+- The footer progress bar shows your position in the entire book (not just the current chapter).
+
+**Common to both modes:**
+
 - **Table of Contents:** Click the list icon in the header or press `T`. The sidebar shows a searchable, hierarchical chapter list. The current chapter is highlighted.
 - **Focus mode:** Press `D` to hide all UI and read distraction-free. Move the mouse to the top or bottom edge to temporarily reveal controls.
+- **Progress tracking:** Your reading position is saved automatically and restored when you reopen the book, regardless of which mode you use.
 
 ### PDF and comic book reading (PDF, CBZ, CBR)
 
@@ -196,7 +221,11 @@ Click the edit button on any book card to open the metadata editor.
 
 - Title
 - Author
+- Series and volume number
+- Language
+- Publisher and publish year
 - Cover image (upload a JPG, PNG, or WebP)
+- Star rating (1-5 stars — click a star to rate, click the same star again to clear)
 - Tags (with autocomplete from your existing tags)
 
 ### OpenLibrary enrichment
@@ -266,19 +295,41 @@ Create and switch profiles from the profile dropdown in the library header. The 
 
 ## 9. Customizing Your Reading Experience
 
-Click the gear icon in the reader header to open Settings.
+Click the gear icon in the reader header (or library toolbar) to open Settings.
 
 ### Theme
 
-Light, Dark, or System. System mode tracks your OS setting automatically.
+Choose from four presets or create your own:
+
+- **Light** — warm off-white with brown text (default)
+- **Sepia** — deeper amber/parchment background with rich brown text, designed for comfortable extended reading
+- **Dark** — dark background with light text for low-light environments
+- **Auto** — follows your operating system's light/dark setting
+
+**Custom colors:** Click the "Custom colors" button to open the color editor. Pick a background and text color — the remaining UI colors (borders, accents, muted text, etc.) are automatically derived. Expand "Advanced" to fine-tune individual color tokens. Preset buttons let you reset to the sepia or light palette.
 
 ### Font size
 
 Adjust between 14px and 24px using the slider, the +/- buttons in Settings, or the A-/A+ buttons in the reader header.
 
-### Font family
+### Reading font
 
-Choose Serif (Lora) or Sans-serif (DM Sans). A live preview shows the result before you close the panel.
+Choose from three fonts for EPUB reading content:
+
+- **Lora** — elegant serif font (default)
+- **DM Sans** — clean sans-serif font
+- **OpenDyslexic** — a font designed for readers with dyslexia, with weighted letterforms that prevent visual rotation and flipping
+
+A live preview sentence shows the selected font. All fonts are bundled locally — no internet connection required.
+
+### EPUB reading mode
+
+Toggle between two modes for how EPUB content is displayed:
+
+- **Paginated** (default) — one chapter at a time with prev/next navigation
+- **Continuous** — all chapters in one long scrollable document with chapter dividers
+
+This is a global preference that applies to all EPUB books.
 
 ### Library folder
 
