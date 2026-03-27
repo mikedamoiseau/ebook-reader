@@ -1159,6 +1159,72 @@ pub async fn create_collection(
 }
 
 #[tauri::command]
+pub async fn update_collection(
+    id: String,
+    name: String,
+    coll_type: String,
+    icon: Option<String>,
+    color: Option<String>,
+    rules: Vec<NewRuleInput>,
+    state: State<'_, AppState>,
+) -> Result<Collection, String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    let coll_type_enum = match coll_type.as_str() {
+        "automated" => CollectionType::Automated,
+        _ => CollectionType::Manual,
+    };
+
+    let rule_structs: Vec<CollectionRule> = rules
+        .into_iter()
+        .map(|r| CollectionRule {
+            id: Uuid::new_v4().to_string(),
+            collection_id: id.clone(),
+            field: r.field,
+            operator: r.operator,
+            value: r.value,
+        })
+        .collect();
+
+    let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
+
+    let created_at: i64 = conn
+        .query_row(
+            "SELECT created_at FROM collections WHERE id = ?1",
+            rusqlite::params![&id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    let collection = Collection {
+        id,
+        name,
+        r#type: coll_type_enum,
+        icon,
+        color,
+        created_at,
+        updated_at: now,
+        rules: rule_structs,
+    };
+
+    db::update_collection(&conn, &collection).map_err(|e| e.to_string())?;
+
+    log_activity(
+        &conn,
+        "collection_updated",
+        "collection",
+        Some(&collection.id),
+        Some(&collection.name),
+        None,
+    );
+
+    Ok(collection)
+}
+
+#[tauri::command]
 pub async fn get_collections(state: State<'_, AppState>) -> Result<Vec<Collection>, String> {
     let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
     db::list_collections(&conn).map_err(|e| e.to_string())

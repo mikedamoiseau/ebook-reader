@@ -102,6 +102,9 @@ export default function PageViewer({
   // Keyboard: arrows for pages, +/- for zoom
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+
       if (e.key === "ArrowLeft") prevPage();
       else if (e.key === "ArrowRight") nextPage();
       else if ((e.key === "=" || e.key === "+") && (e.metaKey || e.ctrlKey)) {

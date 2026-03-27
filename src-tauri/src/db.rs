@@ -59,7 +59,7 @@ fn run_schema(conn: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS collection_rules (
             id TEXT PRIMARY KEY,
             collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
-            field TEXT NOT NULL CHECK(field IN ('author','format','date_added','reading_progress')),
+            field TEXT NOT NULL,
             operator TEXT NOT NULL,
             value TEXT NOT NULL
         );
@@ -159,6 +159,32 @@ fn run_schema(conn: &Connection) -> Result<()> {
     // Index on bookmarks.book_id for list_bookmarks() and cascade delete performance
     let _ = conn
         .execute_batch("CREATE INDEX IF NOT EXISTS idx_bookmarks_book_id ON bookmarks(book_id);");
+
+    // Migration: drop CHECK constraint on collection_rules.field (was limited to a fixed set;
+    // now validated in application code so new rule fields don't require schema changes).
+    let has_check: bool = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='collection_rules'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .map(|sql| sql.contains("CHECK"))
+        .unwrap_or(false);
+
+    if has_check {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS collection_rules_new (
+                id TEXT PRIMARY KEY,
+                collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+                field TEXT NOT NULL,
+                operator TEXT NOT NULL,
+                value TEXT NOT NULL
+            );
+            INSERT OR IGNORE INTO collection_rules_new SELECT * FROM collection_rules;
+            DROP TABLE collection_rules;
+            ALTER TABLE collection_rules_new RENAME TO collection_rules;",
+        )?;
+    }
 
     Ok(())
 }
@@ -512,7 +538,8 @@ pub fn insert_collection(conn: &Connection, collection: &Collection) -> Result<(
         CollectionType::Manual => "manual",
         CollectionType::Automated => "automated",
     };
-    conn.execute(
+    let tx = conn.unchecked_transaction()?;
+    tx.execute(
         "INSERT INTO collections (id, name, type, icon, color, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
@@ -526,7 +553,7 @@ pub fn insert_collection(conn: &Connection, collection: &Collection) -> Result<(
         ],
     )?;
     for rule in &collection.rules {
-        conn.execute(
+        tx.execute(
             "INSERT INTO collection_rules (id, collection_id, field, operator, value)
              VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
@@ -538,6 +565,40 @@ pub fn insert_collection(conn: &Connection, collection: &Collection) -> Result<(
             ],
         )?;
     }
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn update_collection(conn: &Connection, collection: &Collection) -> Result<()> {
+    let type_str = match collection.r#type {
+        CollectionType::Manual => "manual",
+        CollectionType::Automated => "automated",
+    };
+    let tx = conn.unchecked_transaction()?;
+    tx.execute(
+        "UPDATE collections SET name = ?1, type = ?2, icon = ?3, color = ?4, updated_at = ?5
+         WHERE id = ?6",
+        params![
+            collection.name,
+            type_str,
+            collection.icon,
+            collection.color,
+            collection.updated_at,
+            collection.id,
+        ],
+    )?;
+    tx.execute(
+        "DELETE FROM collection_rules WHERE collection_id = ?1",
+        params![collection.id],
+    )?;
+    for rule in &collection.rules {
+        tx.execute(
+            "INSERT INTO collection_rules (id, collection_id, field, operator, value)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![rule.id, rule.collection_id, rule.field, rule.operator, rule.value],
+        )?;
+    }
+    tx.commit()?;
     Ok(())
 }
 
@@ -899,6 +960,34 @@ pub fn get_books_in_collection(conn: &Connection, collection_id: &str) -> Result
         match (rule.field.as_str(), rule.operator.as_str()) {
             ("author", "contains") => {
                 where_clauses.push("b.author LIKE ?".to_string());
+                param_values.push(format!("%{}%", rule.value));
+            }
+            ("filename", "contains") => {
+                where_clauses.push("b.title LIKE ?".to_string());
+                param_values.push(format!("%{}%", rule.value));
+            }
+            ("series", "contains") => {
+                where_clauses.push("b.series LIKE ?".to_string());
+                param_values.push(format!("%{}%", rule.value));
+            }
+            ("series", "equals") => {
+                where_clauses.push("b.series = ?".to_string());
+                param_values.push(rule.value.clone());
+            }
+            ("language", "equals") => {
+                where_clauses.push("b.language = ?".to_string());
+                param_values.push(rule.value.clone());
+            }
+            ("language", "contains") => {
+                where_clauses.push("b.language LIKE ?".to_string());
+                param_values.push(format!("%{}%", rule.value));
+            }
+            ("publisher", "contains") => {
+                where_clauses.push("b.publisher LIKE ?".to_string());
+                param_values.push(format!("%{}%", rule.value));
+            }
+            ("description", "contains") => {
+                where_clauses.push("b.description LIKE ?".to_string());
                 param_values.push(format!("%{}%", rule.value));
             }
             ("format", "equals") => {
