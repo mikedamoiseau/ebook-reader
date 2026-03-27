@@ -8,12 +8,13 @@ A cross-platform desktop ebook reader built with Tauri v2 (Rust) and React.
 - Import EPUB, PDF, CBZ, and CBR files via file picker, drag-and-drop, or folder scan
 - Multi-file import with progress bar and cancel support
 - Duplicate detection via SHA-256 file hashing
-- Sort by date added, last read, title, author, or progress
-- Filter by format and reading status (unread / in progress / finished)
+- Sort by date added, last read, title, author, progress, or rating
+- Filter by format, reading status (unread / in progress / finished), and minimum star rating
 - Search by title or author
-- Collections (manual and rule-based automated)
+- Collections (manual and rule-based automated — rules for author, title, series, language, publisher, format, tag, date, and reading status)
 - Tags with autocomplete
-- Book metadata editing (title, author, cover image)
+- 1-5 star ratings per book (displayed on cards, editable in metadata dialog)
+- Book metadata editing (title, author, series, language, publisher, cover image, rating, tags)
 - Recently opened section for quick resume
 - Multiple profiles with separate libraries
 
@@ -22,7 +23,8 @@ A cross-platform desktop ebook reader built with Tauri v2 (Rust) and React.
 - PDF rendering via bundled pdfium
 - CBZ (ZIP) and CBR (RAR) comic reader
 - Chapter navigation with Table of Contents sidebar
-- Floating prev/next arrows for EPUB chapters
+- Continuous scroll mode for EPUB (all chapters in one scrollable document, with chapter dividers)
+- Floating prev/next arrows for EPUB chapters (paginated mode)
 - Mouse wheel page navigation for PDF/CBZ/CBR
 - Page zoom (Ctrl+scroll, 50%–400%) with drag-to-pan
 - Reading progress auto-saved across sessions
@@ -30,7 +32,10 @@ A cross-platform desktop ebook reader built with Tauri v2 (Rust) and React.
 - Text highlighting with color choices and notes
 - Highlights panel with markdown export
 - Focus mode (hides UI chrome, auto-hides cursor)
-- Light / dark / system theme, adjustable font size and family
+- Theme presets: Light, Sepia, Dark, Auto (system) — plus full custom color editor
+- Reading fonts: Lora (serif), DM Sans (sans-serif), OpenDyslexic (accessibility)
+- Adjustable font size (14-24px)
+- All fonts bundled locally (works offline)
 - Keyboard shortcuts with help overlay (`?` key)
 
 ### Import & Sync
