@@ -7,7 +7,7 @@ import { getDraggedBookId, endDrag, isDragging, subscribe } from "../lib/dragSta
 
 export interface CollectionRule {
   id: string;
-  field: "author" | "format" | "date_added" | "reading_progress";
+  field: "author" | "filename" | "series" | "language" | "publisher" | "description" | "format" | "date_added" | "reading_progress";
   operator: string;
   value: string;
 }
@@ -35,7 +35,8 @@ interface CollectionsSidebarProps {
   activeCollectionId: string | null;
   onClose: () => void;
   onSelect: (id: string | null) => void;
-  onCreate: (data: CreateCollectionData) => void;
+  onCreate: (data: CreateCollectionData) => void | Promise<void>;
+  onEdit: (id: string, data: CreateCollectionData) => void | Promise<void>;
   onDelete: (id: string) => void;
   onDropBook: (bookId: string, collectionId: string) => void;
 }
@@ -57,6 +58,11 @@ const PRESET_ICONS = ["📚", "⭐", "❤️", "🔖", "🎯", "💡", "🌟", "
 
 const FIELD_OPTIONS: { value: CollectionRule["field"]; label: string }[] = [
   { value: "author", label: "Author" },
+  { value: "filename", label: "Title" },
+  { value: "series", label: "Series" },
+  { value: "language", label: "Language" },
+  { value: "publisher", label: "Publisher" },
+  { value: "description", label: "Description" },
   { value: "format", label: "Format" },
   { value: "date_added", label: "Date Added" },
   { value: "reading_progress", label: "Reading Progress" },
@@ -64,6 +70,23 @@ const FIELD_OPTIONS: { value: CollectionRule["field"]; label: string }[] = [
 
 const OPERATOR_OPTIONS: Record<CollectionRule["field"], { value: string; label: string }[]> = {
   author: [
+    { value: "contains", label: "contains" },
+  ],
+  filename: [
+    { value: "contains", label: "contains" },
+  ],
+  series: [
+    { value: "contains", label: "contains" },
+    { value: "equals", label: "is" },
+  ],
+  language: [
+    { value: "equals", label: "is" },
+    { value: "contains", label: "contains" },
+  ],
+  publisher: [
+    { value: "contains", label: "contains" },
+  ],
+  description: [
     { value: "contains", label: "contains" },
   ],
   format: [
@@ -89,6 +112,7 @@ function CollectionRow({
   collection,
   isActive,
   onSelect,
+  onEdit,
   onDelete,
   onDropBook,
   isManual,
@@ -96,6 +120,7 @@ function CollectionRow({
   collection: Collection;
   isActive: boolean;
   onSelect: () => void;
+  onEdit: () => void;
   onDelete: () => void;
   onDropBook: (bookId: string, collectionId: string) => void;
   isManual: boolean;
@@ -159,7 +184,7 @@ function CollectionRow({
         <span className="text-sm leading-none">{collection.icon}</span>
       )}
       {/* Name */}
-      <span className="flex-1 text-sm truncate font-medium">{collection.name}</span>
+      <span className="flex-1 text-sm truncate font-medium" title={collection.name}>{collection.name}</span>
       {/* Automated badge */}
       {collection.type === "automated" && (
         <span className="text-[10px] text-ink-muted opacity-60 mr-1">auto</span>
@@ -180,6 +205,17 @@ function CollectionRow({
         <svg width="13" height="13" viewBox="0 0 20 20" fill="none">
           <path d="M13 3H7a2 2 0 00-2 2v10a2 2 0 002 2h6a2 2 0 002-2V5a2 2 0 00-2-2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
           <path d="M9 1h4a2 2 0 012 2v10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {/* Edit button */}
+      <button
+        className="opacity-0 group-hover:opacity-100 p-0.5 text-ink-muted hover:text-accent transition-all"
+        aria-label={`Edit ${collection.name}`}
+        onClick={(e) => { e.stopPropagation(); onEdit(); }}
+        title="Edit collection"
+      >
+        <svg width="13" height="13" viewBox="0 0 20 20" fill="none">
+          <path d="M13.586 3.586a2 2 0 112.828 2.828l-9.5 9.5-3.5 1 1-3.5 9.172-9.828z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </button>
       {/* Delete button */}
@@ -275,20 +311,25 @@ function RuleRow({
   );
 }
 
-// ---- CreateForm ----
+// ---- CollectionForm (create & edit) ----
 
-function CreateForm({
+function CollectionForm({
+  initial,
   onSave,
   onCancel,
 }: {
-  onSave: (data: CreateCollectionData) => void;
+  initial?: Collection;
+  onSave: (data: CreateCollectionData) => void | Promise<void>;
   onCancel: () => void;
 }) {
-  const [name, setName] = useState("");
-  const [type, setType] = useState<"manual" | "automated">("manual");
-  const [selectedIcon, setSelectedIcon] = useState<string>("");
-  const [selectedColor, setSelectedColor] = useState<string>(PRESET_COLORS[0]);
-  const [rules, setRules] = useState<Omit<CollectionRule, "id">[]>([]);
+  const [name, setName] = useState(initial?.name ?? "");
+  const [saving, setSaving] = useState(false);
+  const [type, setType] = useState<"manual" | "automated">(initial?.type ?? "manual");
+  const [selectedIcon, setSelectedIcon] = useState<string>(initial?.icon ?? "");
+  const [selectedColor, setSelectedColor] = useState<string>(initial?.color ?? PRESET_COLORS[0]);
+  const [rules, setRules] = useState<Omit<CollectionRule, "id">[]>(
+    initial?.rules.map(({ field, operator, value }) => ({ field, operator, value })) ?? []
+  );
 
   const addRule = () => {
     setRules((prev) => [
@@ -305,15 +346,20 @@ function CreateForm({
     setRules((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSave = () => {
-    if (!name.trim()) return;
-    onSave({
-      name: name.trim(),
-      type,
-      icon: selectedIcon || undefined,
-      color: selectedColor,
-      rules,
-    });
+  const handleSave = async () => {
+    if (!name.trim() || saving) return;
+    setSaving(true);
+    try {
+      await onSave({
+        name: name.trim(),
+        type,
+        icon: selectedIcon || undefined,
+        color: selectedColor,
+        rules,
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -329,7 +375,7 @@ function CreateForm({
             <path d="M12 4l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
-        <h2 className="font-serif text-base font-semibold text-ink">New Collection</h2>
+        <h2 className="font-serif text-base font-semibold text-ink">{initial ? "Edit Collection" : "New Collection"}</h2>
       </div>
 
       {/* Form body */}
@@ -445,10 +491,10 @@ function CreateForm({
         <button
           type="button"
           onClick={handleSave}
-          disabled={!name.trim()}
+          disabled={!name.trim() || saving}
           className="flex-1 py-2 text-sm font-medium text-white bg-accent hover:bg-accent-hover rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          Save
+          {saving ? "Saving..." : "Save"}
         </button>
       </div>
     </div>
@@ -464,24 +510,37 @@ export default function CollectionsSidebar({
   onClose,
   onSelect,
   onCreate,
+  onEdit,
   onDelete,
   onDropBook,
 }: CollectionsSidebarProps) {
-  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [formMode, setFormMode] = useState<{ mode: "create" } | { mode: "edit"; collection: Collection } | null>(null);
 
   if (!open) return null;
 
-  const handleCreate = (data: CreateCollectionData) => {
-    onCreate(data);
-    setShowCreateForm(false);
+  const handleCreate = async (data: CreateCollectionData) => {
+    await onCreate(data);
+    setFormMode(null);
+  };
+
+  const handleEdit = async (data: CreateCollectionData) => {
+    if (formMode?.mode !== "edit") return;
+    await onEdit(formMode.collection.id, data);
+    setFormMode(null);
   };
 
   return createPortal(
     <aside className="fixed left-0 top-0 bottom-0 w-64 bg-surface border-r border-warm-border z-20 flex flex-col shadow-[4px_0_24px_-4px_rgba(44,34,24,0.12)] animate-slide-in-left">
-        {showCreateForm ? (
-          <CreateForm
+        {formMode?.mode === "create" ? (
+          <CollectionForm
             onSave={handleCreate}
-            onCancel={() => setShowCreateForm(false)}
+            onCancel={() => setFormMode(null)}
+          />
+        ) : formMode?.mode === "edit" ? (
+          <CollectionForm
+            initial={formMode.collection}
+            onSave={handleEdit}
+            onCancel={() => setFormMode(null)}
           />
         ) : (
           <>
@@ -534,6 +593,7 @@ export default function CollectionsSidebar({
                   isActive={activeCollectionId === collection.id}
                   isManual={collection.type === "manual"}
                   onSelect={() => onSelect(collection.id)}
+                  onEdit={() => setFormMode({ mode: "edit", collection })}
                   onDelete={() => onDelete(collection.id)}
                   onDropBook={onDropBook}
                 />
@@ -543,7 +603,7 @@ export default function CollectionsSidebar({
             {/* Footer */}
             <div className="px-3 py-3 border-t border-warm-border shrink-0">
               <button
-                onClick={() => setShowCreateForm(true)}
+                onClick={() => setFormMode({ mode: "create" })}
                 className="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium text-ink-muted bg-warm-subtle hover:bg-warm-border rounded-lg transition-colors"
               >
                 <svg width="13" height="13" viewBox="0 0 20 20" fill="none">

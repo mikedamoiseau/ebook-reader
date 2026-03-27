@@ -90,6 +90,16 @@ Books are copied into an app-managed library folder (default `~/Documents/ebook-
 
 PDF support requires pdfium binaries bundled in `src-tauri/resources/`. The `scripts/download-pdfium.sh` script fetches them. Run `./scripts/download-pdfium.sh` before first `npm run tauri dev` — PDF import/rendering won't work without it.
 
+### macOS Tahoe C++ Header Fix
+
+On macOS Tahoe (26.x), the Xcode Command Line Tools have a broken C++ header search path — clang can't find `<new>` and other standard headers, which breaks compilation of `unrar_sys` (and potentially other native crates). The fix is:
+
+```bash
+export CPLUS_INCLUDE_PATH="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1"
+```
+
+This is added to Mike's `~/.zshrc`. If builds fail with `fatal error: 'new' file not found`, ensure this env var is set.
+
 ## Security
 
 - EPUB HTML is sanitized server-side (ammonia) and client-side (DOMPurify)

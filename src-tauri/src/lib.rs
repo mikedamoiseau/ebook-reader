@@ -54,6 +54,14 @@ pub fn run() {
                 if flat.exists() {
                     return Some(flat);
                 }
+                // Dev mode fallback: resource_dir() points to target/debug/ where
+                // pdfium isn't copied, so check the source resources/ directory.
+                let dev_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("resources")
+                    .join(pdfium_lib_name);
+                if dev_path.exists() {
+                    return Some(dev_path);
+                }
                 None
             });
 
@@ -139,6 +147,7 @@ pub fn run() {
             commands::get_pdf_page_count,
             commands::get_pdf_page,
             commands::create_collection,
+            commands::update_collection,
             commands::get_collections,
             commands::delete_collection,
             commands::add_book_to_collection,

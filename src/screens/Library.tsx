@@ -55,6 +55,7 @@ export default function Library() {
   // Discover — popular/new books from catalogs (loaded lazily, cached 24h)
   interface DiscoverEntry { id: string; title: string; author: string; summary: string; coverUrl: string | null; links: { href: string; mimeType: string; rel: string }[]; navUrl: string | null }
   const [discoverBooks, setDiscoverBooks] = useState<DiscoverEntry[]>([]);
+  const [discoverInfo, setDiscoverInfo] = useState<{ id: string; rect: DOMRect } | null>(null);
   const [discoverLoading, setDiscoverLoading] = useState(true);
 
   // Collections state
@@ -659,12 +660,13 @@ export default function Library() {
                   const epubLink = entry.links.find((l) => l.mimeType.includes("epub"));
                   const pdfLink = entry.links.find((l) => l.mimeType.includes("pdf"));
                   const downloadLink = epubLink ?? pdfLink;
+                  const plainSummary = entry.summary?.replace(/<[^>]*>/g, "").trim();
                   return (
                     <div
                       key={entry.id}
-                      className="shrink-0 w-28 group text-left rounded-lg overflow-hidden bg-surface border border-warm-border hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+                      className="shrink-0 w-28 group/card text-left rounded-lg overflow-hidden bg-surface border border-warm-border hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
                     >
-                      <div className="aspect-[2/3] bg-warm-subtle overflow-hidden">
+                      <div className="relative aspect-[2/3] bg-warm-subtle overflow-hidden">
                         {entry.coverUrl ? (
                           <img
                             src={entry.coverUrl}
@@ -678,6 +680,19 @@ export default function Library() {
                               <path d="M4 19.5v-15A2.5 2.5 0 016.5 2H20v20H6.5a2.5 2.5 0 010-5H20" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                           </div>
+                        )}
+                        {plainSummary && (
+                          <button
+                            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-ink/50 text-white flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity text-[10px] font-serif font-bold leading-none hover:bg-ink/70"
+                            aria-label="Show description"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                              setDiscoverInfo(discoverInfo?.id === entry.id ? null : { id: entry.id, rect });
+                            }}
+                          >
+                            i
+                          </button>
                         )}
                       </div>
                       <div className="px-2 py-1.5">
@@ -704,6 +719,29 @@ export default function Library() {
                   );
                 })}
               </div>
+              {discoverInfo && (() => {
+                const entry = discoverBooks.find((e) => e.id === discoverInfo.id);
+                if (!entry) return null;
+                const plainSummary = entry.summary?.replace(/<[^>]*>/g, "").trim();
+                if (!plainSummary) return null;
+                const { rect } = discoverInfo;
+                const popoverWidth = 272;
+                let left = rect.left + rect.width / 2 - popoverWidth / 2;
+                left = Math.max(8, Math.min(left, window.innerWidth - popoverWidth - 8));
+                return (
+                  <>
+                    <div className="fixed inset-0 z-50" onClick={() => setDiscoverInfo(null)} />
+                    <div
+                      className="fixed z-50 w-[272px] p-3.5 bg-surface border border-warm-border rounded-xl shadow-xl"
+                      style={{ top: rect.bottom + 8, left }}
+                    >
+                      <p className="text-xs font-semibold text-ink mb-0.5 leading-snug">{entry.title}</p>
+                      {entry.author && <p className="text-[10px] text-ink-muted mb-2">{entry.author}</p>}
+                      <p className="text-[11px] text-ink-muted/80 leading-relaxed line-clamp-[8]">{plainSummary}</p>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
 
@@ -729,10 +767,6 @@ export default function Library() {
                   volume={book.volume}
                   onClick={() => navigate(`/reader/${book.id}`)}
                   onDelete={handleRemoveBook}
-                  onEdit={(id) => {
-                    const book = books.find((b) => b.id === id);
-                    if (book) setEditingBook(book);
-                  }}
                   onInfo={(id) => {
                     const book = books.find((b) => b.id === id);
                     if (book) setDetailBook(book);
@@ -749,21 +783,6 @@ export default function Library() {
                       : undefined
                   }
                   isScanning={scanningBookId === book.id}
-                  onScanForMetadata={async (id) => {
-                    setScanningBookId(id);
-                    setScanToast(null);
-                    try {
-                      await invoke("scan_single_book", { bookId: id });
-                      await loadBooks(activeCollectionIdRef.current);
-                      setScanToast({ message: "Metadata updated", isError: false });
-                    } catch (err) {
-                      const msg = String(err);
-                      setScanToast({ message: msg.includes("No match") ? "No metadata found" : "Scan failed", isError: true });
-                    } finally {
-                      setScanningBookId(null);
-                      setTimeout(() => setScanToast(null), 2500);
-                    }
-                  }}
                 />
               </div>
             ))}
@@ -885,6 +904,23 @@ export default function Library() {
             const book = books.find((b) => b.id === id);
             if (book) setEditingBook(book);
           }}
+          onScan={async (id) => {
+            setScanningBookId(id);
+            setScanToast(null);
+            try {
+              await invoke("scan_single_book", { bookId: id });
+              await loadBooks(activeCollectionIdRef.current);
+              const updated = books.find((b) => b.id === id);
+              if (updated) setDetailBook(updated);
+              setScanToast({ message: "Metadata updated", isError: false });
+            } catch (err) {
+              const msg = String(err);
+              setScanToast({ message: msg.includes("No match") ? "No metadata found" : "Scan failed", isError: true });
+            } finally {
+              setScanningBookId(null);
+              setTimeout(() => setScanToast(null), 2500);
+            }
+          }}
         />
       )}
 
@@ -930,6 +966,25 @@ export default function Library() {
             });
             const updated = await invoke<Collection[]>("get_collections");
             setCollections(updated);
+          } catch (err) {
+            setError(friendlyError(String(err)));
+          }
+        }}
+        onEdit={async (id: string, data: CreateCollectionData) => {
+          try {
+            await invoke("update_collection", {
+              id,
+              name: data.name,
+              collType: data.type,
+              icon: data.icon,
+              color: data.color,
+              rules: data.rules,
+            });
+            const updated = await invoke<Collection[]>("get_collections");
+            setCollections(updated);
+            if (activeCollectionIdRef.current === id) {
+              await loadBooks(id);
+            }
           } catch (err) {
             setError(friendlyError(String(err)));
           }

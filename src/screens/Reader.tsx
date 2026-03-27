@@ -487,6 +487,9 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
       // Don't navigate chapters when any panel is open
       if ((settingsOpen || tocOpen || bookmarksOpen) && (e.key === "ArrowLeft" || e.key === "ArrowRight")) return;
 
+      // For image-based formats (CBZ/CBR/PDF), PageViewer handles arrow keys
+      if (bookFormat !== "epub" && (e.key === "ArrowLeft" || e.key === "ArrowRight")) return;
+
       if (e.key === "ArrowLeft") {
         prevChapter();
       } else if (e.key === "ArrowRight") {
@@ -510,7 +513,7 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [prevChapter, nextChapter, addBookmarkAtCurrentPosition, showShortcuts, tocOpen, bookmarksOpen, dndMode, settingsOpen, navigate]);
+  }, [prevChapter, nextChapter, addBookmarkAtCurrentPosition, showShortcuts, tocOpen, bookmarksOpen, dndMode, settingsOpen, navigate, bookFormat]);
 
   // ---- TOC focus trap ----
 
@@ -605,8 +608,10 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
 
   const fontFamilyCss =
     fontFamily === "serif"
-      ? '"Lora", Georgia, serif'
-      : '"DM Sans", system-ui, sans-serif';
+      ? '"Lora Variable", Georgia, serif'
+      : fontFamily === "dyslexic"
+        ? '"OpenDyslexic", sans-serif'
+        : '"DM Sans Variable", system-ui, sans-serif';
 
   // ---- Render ----
 

@@ -259,14 +259,16 @@ Tauri v2 supports mobile targets. The React frontend renders in a mobile WebView
 
 ### Quick Wins
 
-#### 24. Sepia / Custom Color Themes
-- Add a sepia (warm beige) theme preset alongside light and dark
-- Optional: let users define custom background + text color combinations
+#### 24. Sepia / Custom Color Themes — **Done**
+- ~~Add a sepia (warm beige) theme preset alongside light and dark~~
+- ~~Let users define custom background + text color combinations~~
+- ~~Auto-derive remaining 7 tokens from bg + text via color mixing, with advanced overrides~~
+- ~~Presets: Light, Sepia, Dark, Auto (system); plus full custom color editor~~
 
-#### 25. OpenDyslexic Font
-- Bundle the OpenDyslexic font (free, open-source) as a built-in font option
-- Designed for readers with dyslexia — weighted letterforms prevent visual rotation/flipping
-- Tiny effort: add TTF to assets, add entry to font family dropdown
+#### 25. OpenDyslexic Font — **Done**
+- ~~Bundle the OpenDyslexic font (free, open-source) as a built-in font option~~
+- ~~Designed for readers with dyslexia — weighted letterforms prevent visual rotation/flipping~~
+- ~~WOFF2 files bundled locally (Regular, Bold, Italic, Bold-Italic); 3-button font selector in settings~~
 
 #### 26. Star Ratings
 - 1-5 star rating per book
@@ -407,5 +409,5 @@ Lower priority features — high effort, niche audience, or dependent on other w
 | 5 | Multiple Profiles | Done | Multi-user |
 | 6 | Remote Library Access, OPDS Server | Not started | Remote access |
 | 7 | Android & iOS App | Not started | Mobile |
-| 8 | Sepia Theme, OpenDyslexic, Star Ratings, In-Book Search, Typography, Custom Fonts, Continuous Scroll, Time-to-Finish, Series, Activity Log, MOBI, Nav History, Custom CSS, Dual-Page/Manga, Animations, Split View | Not started | Reader & library enhancements |
-| N/H | Dictionary, Vocabulary Builder, TTS, PDF Reflow, Library-Wide Search, Annotation Exports, Plugins/Hooks, Custom Themes | Not started | Nice to have |
+| 8 | Sepia Theme, OpenDyslexic, Star Ratings, In-Book Search, Typography, Custom Fonts, Continuous Scroll, Time-to-Finish, Series, Activity Log, MOBI, Nav History, Custom CSS, Dual-Page/Manga, Animations, Split View | 2 done | Reader & library enhancements |
+| N/H | Dictionary, Vocabulary Builder, TTS, PDF Reflow, Library-Wide Search, Annotation Exports, Plugins/Hooks | Not started | Nice to have |

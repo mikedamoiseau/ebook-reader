@@ -2,6 +2,40 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ── OpenDyslexic font ─────────────────────────────────────── */
+
+@font-face {
+  font-family: "OpenDyslexic";
+  src: url("./assets/fonts/OpenDyslexic-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "OpenDyslexic";
+  src: url("./assets/fonts/OpenDyslexic-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "OpenDyslexic";
+  src: url("./assets/fonts/OpenDyslexic-Italic.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "OpenDyslexic";
+  src: url("./assets/fonts/OpenDyslexic-Bold-Italic.woff2") format("woff2");
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
 /* ── Design tokens ──────────────────────────────────────────── */
 
 :root {
@@ -30,9 +64,9 @@
 
 @theme {
   /* Fonts */
-  --font-sans:    "DM Sans", system-ui, -apple-system, sans-serif;
-  --font-serif:   "Playfair Display", Georgia, serif;
-  --font-reading: "Lora", Georgia, serif;
+  --font-sans:    "DM Sans Variable", system-ui, -apple-system, sans-serif;
+  --font-serif:   "Playfair Display Variable", Georgia, serif;
+  --font-reading: "Lora Variable", Georgia, serif;
 
   /* Semantic color tokens (CSS variable–backed for dark mode) */
   --color-paper:       var(--paper);
@@ -80,7 +114,7 @@ html, body, #root {
 /* ── Reader content typography (injected EPUB HTML) ─────────── */
 
 .reader-content {
-  font-family: "Lora", Georgia, serif;
+  font-family: "Lora Variable", Georgia, serif;
   color: var(--ink);
 }
 
@@ -91,7 +125,7 @@ html, body, #root {
 }
 
 .reader-content h1 {
-  font-family: "Playfair Display", Georgia, serif;
+  font-family: "Playfair Display Variable", Georgia, serif;
   font-size: 1.6em;
   font-weight: 700;
   margin: 1.6em 0 0.7em;
@@ -99,7 +133,7 @@ html, body, #root {
 }
 
 .reader-content h2 {
-  font-family: "Playfair Display", Georgia, serif;
+  font-family: "Playfair Display Variable", Georgia, serif;
   font-size: 1.3em;
   font-weight: 600;
   margin: 1.4em 0 0.6em;

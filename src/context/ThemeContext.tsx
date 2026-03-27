@@ -6,15 +6,28 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
+import {
+  type ColorMode,
+  type ColorTokens,
+  TOKEN_NAMES,
+  isValidColorMode,
+  SEPIA_TOKENS,
+  DEFAULT_CUSTOM_TOKENS,
+  applyTokensToRoot,
+  clearRootTokens,
+} from "../lib/themes";
 
-type ThemeMode = "light" | "dark" | "system";
+export type { ColorMode, ColorTokens };
+
 type ResolvedTheme = "light" | "dark";
-type FontFamily = "serif" | "sans-serif";
+type FontFamily = "serif" | "sans-serif" | "dyslexic";
 
 interface ThemeContextValue {
-  mode: ThemeMode;
+  mode: ColorMode;
   resolved: ResolvedTheme;
-  setMode: (mode: ThemeMode) => void;
+  setMode: (mode: ColorMode) => void;
+  customColors: ColorTokens;
+  setCustomColors: (colors: ColorTokens) => void;
   fontSize: number;
   setFontSize: (size: number) => void;
   fontFamily: FontFamily;
@@ -23,6 +36,7 @@ interface ThemeContextValue {
 
 const STORAGE_KEYS = {
   theme: "ebook-reader-theme",
+  customColors: "ebook-reader-custom-colors",
   fontSize: "ebook-reader-font-size",
   fontFamily: "ebook-reader-font-family",
 } as const;
@@ -39,11 +53,30 @@ function getSystemTheme(): ResolvedTheme {
     : "light";
 }
 
-function loadStoredMode(): ThemeMode {
+function loadStoredMode(): ColorMode {
   const stored = localStorage.getItem(STORAGE_KEYS.theme);
-  if (stored === "light" || stored === "dark" || stored === "system")
-    return stored;
+  if (stored && isValidColorMode(stored)) return stored;
   return "system";
+}
+
+function loadStoredCustomColors(): ColorTokens {
+  const stored = localStorage.getItem(STORAGE_KEYS.customColors);
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored);
+      if (parsed && typeof parsed === "object") {
+        // Merge against defaults so partial saves don't produce undefined tokens
+        const merged = { ...DEFAULT_CUSTOM_TOKENS };
+        for (const name of TOKEN_NAMES) {
+          if (typeof parsed[name] === "string") merged[name] = parsed[name];
+        }
+        return merged;
+      }
+    } catch {
+      localStorage.removeItem(STORAGE_KEYS.customColors);
+    }
+  }
+  return DEFAULT_CUSTOM_TOKENS;
 }
 
 function loadStoredFontSize(): number {
@@ -58,17 +91,22 @@ function loadStoredFontSize(): number {
 
 function loadStoredFontFamily(): FontFamily {
   const stored = localStorage.getItem(STORAGE_KEYS.fontFamily);
-  if (stored === "serif" || stored === "sans-serif") return stored;
+  if (stored === "serif" || stored === "sans-serif" || stored === "dyslexic") return stored;
   return "serif";
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [mode, setModeState] = useState<ThemeMode>(loadStoredMode);
+  const [mode, setModeState] = useState<ColorMode>(loadStoredMode);
   const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(getSystemTheme);
+  const [customColors, setCustomColorsState] = useState<ColorTokens>(loadStoredCustomColors);
   const [fontSize, setFontSizeState] = useState(loadStoredFontSize);
   const [fontFamily, setFontFamilyState] = useState<FontFamily>(loadStoredFontFamily);
 
-  const resolved: ResolvedTheme = mode === "system" ? systemTheme : mode;
+  // For dark: variant purposes, sepia and custom resolve to "light"
+  const resolved: ResolvedTheme =
+    mode === "dark" ? "dark"
+    : mode === "system" ? systemTheme
+    : "light";
 
   // Listen for system theme changes
   useEffect(() => {
@@ -79,19 +117,36 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener("change", handler);
   }, []);
 
-  // Apply dark class to <html>
+  // Apply theme to <html>: dark class + inline CSS custom properties
   useEffect(() => {
     const root = document.documentElement;
-    if (resolved === "dark") {
+    const effectivelyDark =
+      mode === "dark" || (mode === "system" && systemTheme === "dark");
+
+    if (effectivelyDark) {
       root.classList.add("dark");
+      clearRootTokens();
     } else {
       root.classList.remove("dark");
+      if (mode === "sepia") {
+        applyTokensToRoot(SEPIA_TOKENS);
+      } else if (mode === "custom") {
+        applyTokensToRoot(customColors);
+      } else {
+        // light or system-light: clear overrides, let :root CSS handle it
+        clearRootTokens();
+      }
     }
-  }, [resolved]);
+  }, [mode, systemTheme, customColors]);
 
-  const setMode = useCallback((m: ThemeMode) => {
+  const setMode = useCallback((m: ColorMode) => {
     setModeState(m);
     localStorage.setItem(STORAGE_KEYS.theme, m);
+  }, []);
+
+  const setCustomColors = useCallback((colors: ColorTokens) => {
+    setCustomColorsState(colors);
+    localStorage.setItem(STORAGE_KEYS.customColors, JSON.stringify(colors));
   }, []);
 
   const setFontSize = useCallback((size: number) => {
@@ -107,7 +162,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   return (
     <ThemeContext.Provider
-      value={{ mode, resolved, setMode, fontSize, setFontSize, fontFamily, setFontFamily }}
+      value={{
+        mode, resolved, setMode,
+        customColors, setCustomColors,
+        fontSize, setFontSize,
+        fontFamily, setFontFamily,
+      }}
     >
       {children}
     </ThemeContext.Provider>
