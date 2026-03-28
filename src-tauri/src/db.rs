@@ -5,7 +5,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use crate::models::{
-    ActivityEntry, Book, Bookmark, Collection, CollectionRule, CollectionType, ReadingProgress,
+    ActivityEntry, Book, Bookmark, Collection, CollectionRule, CollectionType, CustomFont,
+    ReadingProgress,
 };
 
 pub type DbPool = Pool<SqliteConnectionManager>;
@@ -118,6 +119,14 @@ fn run_schema(conn: &Connection) -> Result<()> {
             entity_id TEXT,
             entity_name TEXT,
             detail TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS custom_fonts (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            file_name TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            created_at INTEGER NOT NULL
         );
     ",
     )?;
@@ -1196,6 +1205,60 @@ pub fn prune_activity_log(conn: &Connection, keep: u32) -> Result<()> {
     Ok(())
 }
 
+pub fn insert_custom_font(conn: &Connection, font: &CustomFont) -> Result<()> {
+    conn.execute(
+        "INSERT INTO custom_fonts (id, name, file_name, file_path, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            font.id,
+            font.name,
+            font.file_name,
+            font.file_path,
+            font.created_at
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn list_custom_fonts(conn: &Connection) -> Result<Vec<CustomFont>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, file_name, file_path, created_at
+         FROM custom_fonts ORDER BY created_at ASC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(CustomFont {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            file_name: row.get(2)?,
+            file_path: row.get(3)?,
+            created_at: row.get(4)?,
+        })
+    })?;
+    rows.collect()
+}
+
+pub fn delete_custom_font(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute("DELETE FROM custom_fonts WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+pub fn get_custom_font(conn: &Connection, id: &str) -> Result<Option<CustomFont>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, file_name, file_path, created_at
+         FROM custom_fonts WHERE id = ?1",
+    )?;
+    let mut rows = stmt.query_map(params![id], |row| {
+        Ok(CustomFont {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            file_name: row.get(2)?,
+            file_path: row.get(3)?,
+            created_at: row.get(4)?,
+        })
+    })?;
+    rows.next().transpose()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1669,5 +1732,35 @@ mod tests {
         assert_eq!(results[0].id, "act-p4");
         assert_eq!(results[1].id, "act-p3");
         assert_eq!(results[2].id, "act-p2");
+    }
+
+    #[test]
+    fn test_custom_font_crud() {
+        let (_dir, conn) = setup();
+
+        let font = CustomFont {
+            id: "font-1".to_string(),
+            name: "Merriweather".to_string(),
+            file_name: "Merriweather-Regular.ttf".to_string(),
+            file_path: "/tmp/fonts/font-1.ttf".to_string(),
+            created_at: 1700000500,
+        };
+        insert_custom_font(&conn, &font).unwrap();
+
+        let fonts = list_custom_fonts(&conn).unwrap();
+        assert_eq!(fonts.len(), 1);
+        assert_eq!(fonts[0].name, "Merriweather");
+        assert_eq!(fonts[0].file_path, "/tmp/fonts/font-1.ttf");
+
+        let fetched = get_custom_font(&conn, "font-1").unwrap();
+        assert!(fetched.is_some());
+        assert_eq!(fetched.unwrap().file_name, "Merriweather-Regular.ttf");
+
+        let missing = get_custom_font(&conn, "no-such-font").unwrap();
+        assert!(missing.is_none());
+
+        delete_custom_font(&conn, "font-1").unwrap();
+        let fonts = list_custom_fonts(&conn).unwrap();
+        assert_eq!(fonts.len(), 0);
     }
 }

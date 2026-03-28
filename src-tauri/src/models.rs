@@ -141,6 +141,16 @@ pub struct ActivityEntry {
     pub detail: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomFont {
+    pub id: String,
+    pub name: String,
+    pub file_name: String,
+    pub file_path: String,
+    pub created_at: i64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
