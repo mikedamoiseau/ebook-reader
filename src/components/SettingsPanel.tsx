@@ -259,7 +259,7 @@ function formatBytes(bytes: number): string {
 }
 
 export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
-  const { mode, setMode, customColors, setCustomColors, fontSize, setFontSize, fontFamily, setFontFamily, scrollMode, setScrollMode, typography, setTypography, customCss, setCustomCss } =
+  const { mode, setMode, customColors, setCustomColors, fontSize, setFontSize, fontFamily, setFontFamily, scrollMode, setScrollMode, typography, setTypography, customCss, setCustomCss, dualPage, setDualPage, mangaMode, setMangaMode } =
     useTheme();
   const panelRef = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
@@ -947,6 +947,50 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 ? "Scroll through all chapters in one continuous flow. Large books may take a moment to load."
                 : "Read one chapter at a time with prev/next navigation. Switch to continuous scroll for a seamless reading experience."}
             </p>
+          </Accordion>
+
+          {/* Reading Layout */}
+          <Accordion title="Reading Layout">
+            <div className="space-y-4">
+              {/* Dual-page toggle */}
+              <label className="flex items-center justify-between gap-3">
+                <div>
+                  <span className="text-sm text-ink">Dual-page spread</span>
+                  <p className="text-[11px] text-ink-muted/60 mt-0.5">Show two pages side by side, like an open book.</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={dualPage}
+                  onClick={() => setDualPage(!dualPage)}
+                  className={`relative w-10 h-6 rounded-full transition-colors ${dualPage ? "bg-accent" : "bg-warm-border"}`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${dualPage ? "translate-x-4" : ""}`}
+                  />
+                </button>
+              </label>
+
+              {/* Manga mode toggle */}
+              <label className={`flex items-center justify-between gap-3 ${!dualPage ? "opacity-40 pointer-events-none" : ""}`}>
+                <div>
+                  <span className="text-sm text-ink">Manga mode (right-to-left)</span>
+                  <p className="text-[11px] text-ink-muted/60 mt-0.5">Swap page order so the right page comes first, for manga and RTL comics.</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={mangaMode}
+                  aria-disabled={!dualPage}
+                  onClick={() => dualPage && setMangaMode(!mangaMode)}
+                  className={`relative w-10 h-6 rounded-full transition-colors ${mangaMode && dualPage ? "bg-accent" : "bg-warm-border"}`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${mangaMode && dualPage ? "translate-x-4" : ""}`}
+                  />
+                </button>
+              </label>
+            </div>
           </Accordion>
 
           {/* Custom CSS */}
