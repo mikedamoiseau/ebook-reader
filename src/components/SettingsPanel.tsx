@@ -686,10 +686,34 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 />
               )}
             </div>
+
+            {/* Custom CSS */}
+            <div className="mt-4 pt-4 border-t border-warm-border/50 space-y-2">
+              <label className="text-xs font-medium text-ink-muted mb-1 block">Custom CSS</label>
+              <textarea
+                value={customCss}
+                onChange={(e) => setCustomCss(e.target.value)}
+                placeholder={`.reader-content p {\n  color: #333;\n}`}
+                className="w-full h-28 text-xs font-mono bg-warm-subtle border border-warm-border rounded-lg px-3 py-2 text-ink placeholder-ink-muted/40 focus:outline-none focus:border-accent resize-y"
+                spellCheck={false}
+              />
+              <p className="text-[11px] text-ink-muted leading-relaxed">
+                Applied as a global stylesheet while reading EPUBs. Target <code className="bg-warm-subtle px-1 rounded">.reader-content</code> and its children.
+              </p>
+              {customCss && (
+                <button
+                  type="button"
+                  onClick={() => setCustomCss("")}
+                  className="text-xs text-ink-muted hover:text-ink transition-colors"
+                >
+                  Clear custom CSS
+                </button>
+              )}
+            </div>
           </Accordion>
 
-          {/* Font size */}
-          <Accordion title="Font Size" defaultOpen>
+          {/* Text & Typography */}
+          <Accordion title="Text & Typography" defaultOpen>
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setFontSize(fontSize - 1)}
@@ -723,10 +747,10 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 +
               </button>
             </div>
-          </Accordion>
 
-          {/* Font family */}
-          <Accordion title="Reading Font" defaultOpen>
+            {/* Reading font */}
+            <div className="mt-4 pt-4 border-t border-warm-border/50">
+            <label className="text-xs font-medium text-ink-muted mb-2 block">Reading font</label>
             <div className="flex flex-col gap-1">
               {/* Built-in fonts */}
               {([
@@ -830,10 +854,10 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
             >
               The quick brown fox jumps over the lazy dog.
             </p>
-          </Accordion>
+            </div>
 
-          {/* Typography */}
-          <Accordion title="Typography">
+            {/* Typography */}
+            <div className="mt-4 pt-4 border-t border-warm-border/50">
             <div className="space-y-4">
               {/* Line height */}
               <div>
@@ -922,10 +946,11 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 <p className="text-[11px] text-ink-muted/60 mt-1">Automatically break long words at line endings for a tidier text block.</p>
               </div>
             </div>
+            </div>
           </Accordion>
 
-          {/* Scroll mode */}
-          <Accordion title="EPUB Reading Mode" defaultOpen>
+          {/* Page Layout */}
+          <Accordion title="Page Layout" defaultOpen>
             <div className="flex gap-1 bg-warm-subtle rounded-xl p-1">
               {(["paginated", "continuous"] as const).map((option) => (
                 <button
@@ -947,12 +972,9 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 ? "Scroll through all chapters in one continuous flow. Large books may take a moment to load."
                 : "Read one chapter at a time with prev/next navigation. Switch to continuous scroll for a seamless reading experience."}
             </p>
-          </Accordion>
 
-          {/* Reading Layout */}
-          <Accordion title="Reading Layout">
-            <div className="space-y-4">
-              {/* Dual-page toggle */}
+            {/* Dual-page spread */}
+            <div className="mt-4 pt-4 border-t border-warm-border/50 space-y-4">
               <label className="flex items-center justify-between gap-3">
                 <div>
                   <span className="text-sm text-ink">Dual-page spread</span>
@@ -990,31 +1012,6 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                   />
                 </button>
               </label>
-            </div>
-          </Accordion>
-
-          {/* Custom CSS */}
-          <Accordion title="Custom CSS">
-            <div className="space-y-2">
-              <textarea
-                value={customCss}
-                onChange={(e) => setCustomCss(e.target.value)}
-                placeholder={`.reader-content p {\n  color: #333;\n}`}
-                className="w-full h-28 text-xs font-mono bg-warm-subtle border border-warm-border rounded-lg px-3 py-2 text-ink placeholder-ink-muted/40 focus:outline-none focus:border-accent resize-y"
-                spellCheck={false}
-              />
-              <p className="text-[11px] text-ink-muted leading-relaxed">
-                Applied as a global stylesheet while reading EPUBs. Target <code className="bg-warm-subtle px-1 rounded">.reader-content</code> and its children.
-              </p>
-              {customCss && (
-                <button
-                  type="button"
-                  onClick={() => setCustomCss("")}
-                  className="text-xs text-ink-muted hover:text-ink transition-colors"
-                >
-                  Clear custom CSS
-                </button>
-              )}
             </div>
           </Accordion>
 
