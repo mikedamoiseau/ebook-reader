@@ -150,6 +150,7 @@ fn run_schema(conn: &Connection) -> Result<()> {
         conn.execute_batch("ALTER TABLE books ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;");
     let _ = conn
         .execute_batch("ALTER TABLE bookmarks ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;");
+    let _ = conn.execute_batch("ALTER TABLE bookmarks ADD COLUMN name TEXT;");
     let _ = conn
         .execute_batch("ALTER TABLE highlights ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;");
     // Backfill: set updated_at = added_at or created_at for existing rows
@@ -462,13 +463,14 @@ pub fn get_recently_read_books(conn: &Connection, limit: u32) -> Result<Vec<Book
 
 pub fn insert_bookmark(conn: &Connection, bookmark: &Bookmark) -> Result<()> {
     conn.execute(
-        "INSERT INTO bookmarks (id, book_id, chapter_index, scroll_position, note, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO bookmarks (id, book_id, chapter_index, scroll_position, name, note, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             bookmark.id,
             bookmark.book_id,
             bookmark.chapter_index,
             bookmark.scroll_position,
+            bookmark.name,
             bookmark.note,
             bookmark.created_at,
             bookmark.created_at,
@@ -479,7 +481,7 @@ pub fn insert_bookmark(conn: &Connection, bookmark: &Bookmark) -> Result<()> {
 
 pub fn list_bookmarks(conn: &Connection, book_id: &str) -> Result<Vec<Bookmark>> {
     let mut stmt = conn.prepare(
-        "SELECT id, book_id, chapter_index, scroll_position, note, created_at
+        "SELECT id, book_id, chapter_index, scroll_position, name, note, created_at
          FROM bookmarks WHERE book_id = ?1 ORDER BY created_at ASC",
     )?;
     let rows = stmt.query_map(params![book_id], |row| {
@@ -488,8 +490,9 @@ pub fn list_bookmarks(conn: &Connection, book_id: &str) -> Result<Vec<Bookmark>>
             book_id: row.get(1)?,
             chapter_index: row.get(2)?,
             scroll_position: row.get(3)?,
-            note: row.get(4)?,
-            created_at: row.get(5)?,
+            name: row.get(4)?,
+            note: row.get(5)?,
+            created_at: row.get(6)?,
         })
     })?;
     rows.collect()
@@ -497,6 +500,18 @@ pub fn list_bookmarks(conn: &Connection, book_id: &str) -> Result<Vec<Bookmark>>
 
 pub fn delete_bookmark(conn: &Connection, id: &str) -> Result<()> {
     conn.execute("DELETE FROM bookmarks WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+pub fn update_bookmark_name(conn: &Connection, id: &str, name: Option<&str>) -> Result<()> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    conn.execute(
+        "UPDATE bookmarks SET name = ?1, updated_at = ?2 WHERE id = ?3",
+        params![name, now, id],
+    )?;
     Ok(())
 }
 
@@ -1312,6 +1327,7 @@ mod tests {
             book_id: "book-3".to_string(),
             chapter_index: 2,
             scroll_position: 0.3,
+            name: None,
             note: Some("Great quote".to_string()),
             created_at: 1700000200,
         };
@@ -1327,6 +1343,35 @@ mod tests {
     }
 
     #[test]
+    fn test_update_bookmark_name() {
+        let (_dir, conn) = setup();
+        let book = sample_book("book-bm-name");
+        insert_book(&conn, &book).unwrap();
+
+        let bookmark = Bookmark {
+            id: "bm-name-1".to_string(),
+            book_id: "book-bm-name".to_string(),
+            chapter_index: 1,
+            scroll_position: 0.5,
+            name: None,
+            note: None,
+            created_at: 1700000400,
+        };
+        insert_bookmark(&conn, &bookmark).unwrap();
+
+        let bookmarks = list_bookmarks(&conn, "book-bm-name").unwrap();
+        assert_eq!(bookmarks[0].name, None);
+
+        update_bookmark_name(&conn, "bm-name-1", Some("Important passage")).unwrap();
+        let bookmarks = list_bookmarks(&conn, "book-bm-name").unwrap();
+        assert_eq!(bookmarks[0].name, Some("Important passage".to_string()));
+
+        update_bookmark_name(&conn, "bm-name-1", None).unwrap();
+        let bookmarks = list_bookmarks(&conn, "book-bm-name").unwrap();
+        assert_eq!(bookmarks[0].name, None);
+    }
+
+    #[test]
     fn test_delete_book_cascades_to_related_rows() {
         let (_dir, conn) = setup();
         let book = sample_book("book-cascade");
@@ -1337,6 +1382,7 @@ mod tests {
             book_id: "book-cascade".to_string(),
             chapter_index: 1,
             scroll_position: 0.1,
+            name: None,
             note: None,
             created_at: 1700000300,
         };

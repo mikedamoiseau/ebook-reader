@@ -959,6 +959,7 @@ pub async fn add_bookmark(
         book_id,
         chapter_index,
         scroll_position,
+        name: None,
         note,
         created_at: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -979,6 +980,17 @@ pub async fn remove_bookmark(
 ) -> Result<(), String> {
     let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
     db::delete_bookmark(&conn, &bookmark_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_bookmark(
+    bookmark_id: String,
+    name: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let name_ref = name.as_deref().filter(|s| !s.trim().is_empty());
+    let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
+    db::update_bookmark_name(&conn, &bookmark_id, name_ref).map_err(|e| e.to_string())
 }
 
 // --- Comic (CBZ / CBR) ---

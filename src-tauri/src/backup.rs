@@ -506,7 +506,7 @@ pub fn run_incremental_backup(
     let bookmarks: Vec<crate::models::Bookmark> = {
         let mut stmt = conn
             .prepare(
-                "SELECT id, book_id, chapter_index, scroll_position, note, created_at FROM bookmarks WHERE updated_at > ?1",
+                "SELECT id, book_id, chapter_index, scroll_position, name, note, created_at FROM bookmarks WHERE updated_at > ?1",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
@@ -516,8 +516,9 @@ pub fn run_incremental_backup(
                     book_id: row.get(1)?,
                     chapter_index: row.get(2)?,
                     scroll_position: row.get(3)?,
-                    note: row.get(4)?,
-                    created_at: row.get(5)?,
+                    name: row.get(4)?,
+                    note: row.get(5)?,
+                    created_at: row.get(6)?,
                 })
             })
             .map_err(|e| e.to_string())?;

@@ -146,6 +146,7 @@ pub fn run() {
             commands::get_bookmarks,
             commands::add_bookmark,
             commands::remove_bookmark,
+            commands::update_bookmark,
             commands::get_comic_page_count,
             commands::get_comic_page,
             commands::get_pdf_page_count,

@@ -72,6 +72,7 @@ pub struct Bookmark {
     pub book_id: String,
     pub chapter_index: u32,
     pub scroll_position: f64,
+    pub name: Option<String>,
     pub note: Option<String>,
     pub created_at: i64,
 }
