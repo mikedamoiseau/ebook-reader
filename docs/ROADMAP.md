@@ -103,11 +103,12 @@ Expand where books come from and how they persist.
 - ~~Import from a backup archive~~
 - ~~Useful for migration between machines~~
 
-### 13b. Remote Backup Destinations
-- Backup to external services beyond local folder: FTP/SFTP, AWS S3, Google Drive, Dropbox, WebDAV, network share
-- Scheduled automatic backups (daily/weekly)
-- Configurable destinations in settings — add/remove targets, test connection
-- Incremental backups (only changed files since last backup)
+### 13b. Remote Backup Destinations — **Partial** *(S3 & FTP done)*
+- ~~Backup to external services: AWS S3, FTP — implemented via OpenDAL~~
+- ~~Configurable destinations in settings — add/remove targets~~
+- ~~Incremental backups (only changed files since last backup)~~
+- Google Drive, Dropbox, WebDAV, network share (not yet)
+- Scheduled automatic backups (daily/weekly) (not yet)
 - *Depends on: Library Export/Backup*
 
 ### 14. Book Discovery & Catalog Search — **Done** *(via OPDS in #11)*
@@ -417,7 +418,7 @@ Lower priority features — high effort, niche audience, or dependent on other w
 |-------|----------|--------|-------|
 | 1 | Copy-on-Import, Multi-File Picker, Collections, Sort/Filter, Tags | 5 done | Storage & organization |
 | 2 | Highlights, Metadata Edit, Keyboard Shortcuts, Focus Mode, Zoom | Done | Reading experience |
-| 3 | Remote Files, Bulk Import, Backup, Book Discovery, Position Sync | 3 done, 1 partial, 1 not started | Import & sync |
+| 3 | Remote Files, Bulk Import, Backup, Book Discovery, Position Sync | 3 done, 2 partial, 1 not started | Import & sync |
 | 4 | Stats, Goodreads, Recents, Share, Recommendations | 4 done, 1 partial | Discovery & social |
 | 5 | Multiple Profiles | Done | Multi-user |
 | 6 | Remote Library Access, OPDS Server | Not started | Remote access |
