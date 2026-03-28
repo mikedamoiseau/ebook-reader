@@ -45,3 +45,6 @@ lerna-debug.log*
 # Claude Code config
 .claude-bw/
 .claude/
+
+# Superpowers brainstorming artifacts
+.superpowers/
