@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use crate::models::{
     ActivityEntry, Book, Bookmark, Collection, CollectionRule, CollectionType, CustomFont,
-    ReadingProgress,
+    ReadingProgress, SeriesInfo,
 };
 
 pub type DbPool = Pool<SqliteConnectionManager>;
@@ -1259,6 +1259,22 @@ pub fn get_custom_font(conn: &Connection, id: &str) -> Result<Option<CustomFont>
     rows.next().transpose()
 }
 
+pub fn list_series(conn: &Connection) -> Result<Vec<SeriesInfo>> {
+    let mut stmt = conn.prepare(
+        "SELECT series, COUNT(*) as count FROM books
+         WHERE series IS NOT NULL AND series != ''
+         GROUP BY series HAVING count >= 2
+         ORDER BY series ASC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(SeriesInfo {
+            name: row.get(0)?,
+            count: row.get(1)?,
+        })
+    })?;
+    rows.collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1762,5 +1778,45 @@ mod tests {
         delete_custom_font(&conn, "font-1").unwrap();
         let fonts = list_custom_fonts(&conn).unwrap();
         assert_eq!(fonts.len(), 0);
+    }
+
+    #[test]
+    fn test_list_series() {
+        let (_dir, conn) = setup();
+
+        let mut book1 = sample_book("s1");
+        book1.file_path = "/tmp/s1.epub".to_string();
+        book1.series = Some("Dune".to_string());
+        book1.volume = Some(1);
+        insert_book(&conn, &book1).unwrap();
+
+        let mut book2 = sample_book("s2");
+        book2.file_path = "/tmp/s2.epub".to_string();
+        book2.series = Some("Dune".to_string());
+        book2.volume = Some(2);
+        insert_book(&conn, &book2).unwrap();
+
+        let mut book3 = sample_book("s3");
+        book3.file_path = "/tmp/s3.epub".to_string();
+        book3.series = Some("Foundation".to_string());
+        book3.volume = Some(1);
+        insert_book(&conn, &book3).unwrap();
+
+        // Single book in series — should NOT appear (threshold is 2+)
+        let mut book4 = sample_book("s4");
+        book4.file_path = "/tmp/s4.epub".to_string();
+        book4.series = Some("Neuromancer".to_string());
+        book4.volume = Some(1);
+        insert_book(&conn, &book4).unwrap();
+
+        // Book without series
+        let mut book5 = sample_book("s5");
+        book5.file_path = "/tmp/s5.epub".to_string();
+        insert_book(&conn, &book5).unwrap();
+
+        let series = list_series(&conn).unwrap();
+        assert_eq!(series.len(), 1); // Only "Dune" has 2+ books
+        assert_eq!(series[0].name, "Dune");
+        assert_eq!(series[0].count, 2);
     }
 }

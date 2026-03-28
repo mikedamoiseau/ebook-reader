@@ -151,6 +151,12 @@ pub struct CustomFont {
     pub created_at: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeriesInfo {
+    pub name: String,
+    pub count: i64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
