@@ -314,13 +314,15 @@ Adjust between 14px and 24px using the slider, the +/- buttons in Settings, or t
 
 ### Reading font
 
-Choose from three fonts for EPUB reading content:
+Choose from three built-in fonts for EPUB reading content:
 
 - **Lora** — elegant serif font (default)
 - **DM Sans** — clean sans-serif font
 - **OpenDyslexic** — a font designed for readers with dyslexia, with weighted letterforms that prevent visual rotation and flipping
 
-A live preview sentence shows the selected font. All fonts are bundled locally — no internet connection required.
+You can also add your own fonts: click **Add font...** at the bottom of the font list and select a `.ttf`, `.otf`, or `.woff2` file. Custom fonts appear alongside the built-in options. To remove a custom font, hover over it and click the X icon.
+
+A live preview sentence shows the selected font. Built-in fonts are bundled locally — no internet connection required.
 
 ### EPUB reading mode
 
