@@ -357,9 +357,14 @@ Tauri v2 supports mobile targets. The React frontend renders in a mobile WebView
 - Per-book CSS override (TBD)
 
 #### 38. Dual-Page Spread / Manga Mode
-- Side-by-side two-page view for comics (CBZ/CBR) and PDFs
-- Right-to-left page order option for manga
-- Toggle in reader settings
+- Side-by-side two-page view for all formats (CBZ/CBR, PDF, EPUB in paginated mode)
+- Right-to-left page order option for manga (swaps spread order, not navigation direction)
+- Cover page always displayed solo; subsequent pages paired (2-3, 4-5, etc.)
+- Quick toggle in reader bar + persistent setting in SettingsPanel
+- Global setting (applies to all books)
+- EPUB: CSS columns approach; page-based formats: two images side by side
+- Future: preload next spread in background for smoother page turns
+- Future: auto-detect landscape/wide images and display solo at full width
 
 #### 39. Page Turn Animations
 - Optional visual effects when turning pages (curl, slide, fade)
