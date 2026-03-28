@@ -731,6 +731,7 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
               {/* Built-in fonts */}
               {([
                 { key: "serif", label: "Lora", css: '"Lora Variable", Georgia, serif' },
+                { key: "literata", label: "Literata", css: '"Literata Variable", Georgia, serif' },
                 { key: "sans-serif", label: "DM Sans", css: '"DM Sans Variable", system-ui, sans-serif' },
                 { key: "dyslexic", label: "OpenDyslexic", css: '"OpenDyslexic", sans-serif' },
               ] as const).map((option) => (
@@ -818,11 +819,13 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 fontFamily:
                   fontFamily === "serif"
                     ? '"Lora Variable", Georgia, serif'
-                    : fontFamily === "dyslexic"
-                      ? '"OpenDyslexic", sans-serif'
-                      : fontFamily.startsWith("custom:")
-                        ? `"CustomFont-${fontFamily.slice(7)}", serif`
-                        : '"DM Sans Variable", system-ui, sans-serif',
+                    : fontFamily === "literata"
+                      ? '"Literata Variable", Georgia, serif'
+                      : fontFamily === "dyslexic"
+                        ? '"OpenDyslexic", sans-serif'
+                        : fontFamily.startsWith("custom:")
+                          ? `"CustomFont-${fontFamily.slice(7)}", serif`
+                          : '"DM Sans Variable", system-ui, sans-serif',
               }}
             >
               The quick brown fox jumps over the lazy dog.

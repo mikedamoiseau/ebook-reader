@@ -314,9 +314,10 @@ Adjust between 14px and 24px using the slider, the +/- buttons in Settings, or t
 
 ### Reading font
 
-Choose from three built-in fonts for EPUB reading content:
+Choose from four built-in fonts for EPUB reading content:
 
 - **Lora** — elegant serif font (default)
+- **Literata** — a serif font designed for e-reading (created by Google for Play Books)
 - **DM Sans** — clean sans-serif font
 - **OpenDyslexic** — a font designed for readers with dyslexia, with weighted letterforms that prevent visual rotation and flipping
 
