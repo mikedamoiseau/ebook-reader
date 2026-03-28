@@ -215,15 +215,16 @@ export default function PageViewer({
   // Clamp pan so content can't be dragged beyond its edges
   const clampPan = useCallback((p: { x: number; y: number }): { x: number; y: number } => {
     const overflow = getOverflow();
-    // Max pan in each direction = half the overflow (content is centered)
-    // Divide by zoom because translate values are in pre-scale coordinates
-    const maxPanX = overflow.x / 2 / zoom;
-    const maxPanY = overflow.y / 2 / zoom;
+    // panRef values are in visual (post-scale) coordinates because
+    // applyTransform uses translate(p.x/zoom, p.y/zoom) inside scale(zoom),
+    // so the zoom cancels out. Max visual pan = half the overflow.
+    const maxPanX = overflow.x / 2;
+    const maxPanY = overflow.y / 2;
     return {
       x: Math.max(-maxPanX, Math.min(maxPanX, p.x)),
       y: Math.max(-maxPanY, Math.min(maxPanY, p.y)),
     };
-  }, [getOverflow, zoom]);
+  }, [getOverflow]);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
