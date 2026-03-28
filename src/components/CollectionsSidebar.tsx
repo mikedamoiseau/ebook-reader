@@ -133,8 +133,24 @@ function CollectionRow({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [shareMenu, setShareMenu] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const dragging = useSyncExternalStore(subscribe, isDragging);
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Fallback for when clipboard API is unavailable
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+  };
 
   const handleMouseUp = () => {
     if (!isManual) return;
@@ -220,13 +236,16 @@ function CollectionRow({
                 className="w-full text-left px-3 py-1.5 text-xs text-ink hover:bg-warm-subtle transition-colors"
                 onClick={async (e) => {
                   e.stopPropagation();
+                  setShareMenu(false);
                   try {
                     const md = await invoke<string>("export_collection_markdown", { collectionId: collection.id });
-                    await navigator.clipboard.writeText(md);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1500);
-                  } catch { /* ignore */ }
-                  setShareMenu(false);
+                    await copyToClipboard(md);
+                    setCopyFeedback("Copied as Markdown!");
+                    setTimeout(() => setCopyFeedback(null), 1500);
+                  } catch {
+                    setCopyFeedback("Export failed");
+                    setTimeout(() => setCopyFeedback(null), 1500);
+                  }
                 }}
               >
                 Copy as Markdown
@@ -235,24 +254,22 @@ function CollectionRow({
                 className="w-full text-left px-3 py-1.5 text-xs text-ink hover:bg-warm-subtle transition-colors"
                 onClick={async (e) => {
                   e.stopPropagation();
+                  setShareMenu(false);
                   try {
                     const json = await invoke<string>("export_collection_json", { collectionId: collection.id });
-                    await navigator.clipboard.writeText(json);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1500);
-                  } catch { /* ignore */ }
-                  setShareMenu(false);
+                    await copyToClipboard(json);
+                    setCopyFeedback("Copied as JSON!");
+                    setTimeout(() => setCopyFeedback(null), 1500);
+                  } catch {
+                    setCopyFeedback("Export failed");
+                    setTimeout(() => setCopyFeedback(null), 1500);
+                  }
                 }}
               >
                 Copy as JSON
               </button>
             </div>
           </>
-        )}
-        {copied && (
-          <div className="absolute right-0 top-6 z-50 px-2 py-1 bg-ink/90 text-white text-[10px] rounded shadow-lg whitespace-nowrap animate-fade-in">
-            Copied!
-          </div>
         )}
       </div>
       {/* Edit button */}
@@ -285,6 +302,12 @@ function CollectionRow({
           />
         </svg>
       </button>
+    {copyFeedback && createPortal(
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-ink/90 text-white text-sm rounded-lg shadow-lg animate-fade-in">
+        {copyFeedback}
+      </div>,
+      document.body,
+    )}
     </div>
   );
 }
