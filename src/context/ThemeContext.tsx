@@ -22,7 +22,7 @@ import {
 export type { ColorMode, ColorTokens };
 
 type ResolvedTheme = "light" | "dark";
-type FontFamily = "serif" | "sans-serif" | "dyslexic";
+type FontFamily = string;
 type ScrollMode = "paginated" | "continuous";
 type TextAlign = "left" | "justify";
 
@@ -120,7 +120,7 @@ function loadStoredFontSize(): number {
 
 function loadStoredFontFamily(): FontFamily {
   const stored = localStorage.getItem(STORAGE_KEYS.fontFamily);
-  if (stored === "serif" || stored === "sans-serif" || stored === "dyslexic") return stored;
+  if (stored) return stored;
   return "serif";
 }
 
