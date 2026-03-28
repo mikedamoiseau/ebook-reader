@@ -356,7 +356,7 @@ export default function Library() {
         case "series": {
           const sa = a.series ?? "";
           const sb = b.series ?? "";
-          if (sa !== sb) return sa.localeCompare(sb);
+          if (sa !== sb) return dir * sa.localeCompare(sb);
           const va = a.volume ?? 9999;
           const vb = b.volume ?? 9999;
           if (va !== vb) return va - vb;

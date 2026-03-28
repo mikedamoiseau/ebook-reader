@@ -147,6 +147,15 @@ Multiple rules are combined with AND logic — a book must match all rules to ap
 - Export as Markdown
 - Delete collection
 
+### Series grouping
+
+Books with series metadata are automatically grouped in two ways:
+
+- **Sidebar:** A "Series" section appears below collections, showing each series with its book count. Click a series to filter the library to just those books, sorted by volume order.
+- **Sort by Series:** Select the "Series" sort option in the library toolbar. Books are grouped under series headers, sorted by volume within each group. Books without series data appear at the bottom.
+
+Series data comes from book file metadata (EPUB/CBZ). You can also set or edit series info manually via the edit dialog on any book.
+
 ---
 
 ## 4. Reading a Book

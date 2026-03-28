@@ -320,10 +320,11 @@ Tauri v2 supports mobile targets. The React frontend renders in a mobile WebView
 
 ### Organization & Format
 
-#### 32. Series Grouping
-- Automatically group books that share series metadata (from OpenLibrary enrichment)
-- Display series books in order within the library
-- Lightweight extension of existing collections + OpenLibrary integration
+#### 32. Series Grouping — **Done**
+- ~~Automatically group books that share series metadata~~
+- ~~Series section in sidebar: click to filter library to a series~~
+- ~~"Series" sort option in library grid: groups books under series headers, sorted by volume~~
+- ~~Series with 2+ books shown; non-series books displayed after series groups~~
 
 #### 33. Activity Log — **Done**
 - ~~Persistent log of data-changing operations: book imports, deletions, metadata enrichments, cover changes, backup/restore, collection edits, profile switches~~
@@ -428,5 +429,5 @@ Lower priority features — high effort, niche audience, or dependent on other w
 | 5 | Multiple Profiles | Done | Multi-user |
 | 6 | Remote Library Access, OPDS Server | Not started | Remote access |
 | 7 | Android & iOS App | Not started | Mobile |
-| 8 | Sepia Theme, OpenDyslexic, Star Ratings, In-Book Search, Typography, Custom Fonts, Continuous Scroll, Time-to-Finish, Bookmark Naming, Series, Activity Log, MOBI, Nav History, Custom CSS, Dual-Page/Manga, Animations, Split View | 11 done | Reader & library enhancements |
+| 8 | Sepia Theme, OpenDyslexic, Star Ratings, In-Book Search, Typography, Custom Fonts, Continuous Scroll, Time-to-Finish, Bookmark Naming, Series, Activity Log, MOBI, Nav History, Custom CSS, Dual-Page/Manga, Animations, Split View | 12 done | Reader & library enhancements |
 | N/H | Dictionary, Vocabulary Builder, TTS, PDF Reflow, Library-Wide Search, Annotation Exports, Plugins/Hooks, User Themes | Not started | Nice to have |
