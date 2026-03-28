@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
+import React, { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
 import { useNavigate } from "react-router-dom";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -31,9 +31,9 @@ export default function Library() {
   const [progressMap, setProgressMap] = useState<Record<string, number>>({});
   const [lastReadMap, setLastReadMap] = useState<Record<string, number>>({});
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<"date_added" | "last_read" | "title" | "author" | "progress" | "rating">(() => {
+  const [sortBy, setSortBy] = useState<"date_added" | "last_read" | "title" | "author" | "progress" | "rating" | "series">(() => {
     const stored = localStorage.getItem("folio-library-sort-by");
-    if (stored === "date_added" || stored === "last_read" || stored === "title" || stored === "author" || stored === "progress" || stored === "rating") return stored;
+    if (stored === "date_added" || stored === "last_read" || stored === "title" || stored === "author" || stored === "progress" || stored === "rating" || stored === "series") return stored;
     return "date_added";
   });
   const [sortAsc, setSortAsc] = useState(() => localStorage.getItem("folio-library-sort-asc") === "true");
@@ -74,6 +74,8 @@ export default function Library() {
   const [collectionsOpen, setCollectionsOpen] = useState(false);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
+  const [activeSeries, setActiveSeries] = useState<string | null>(null);
+  const [seriesList, setSeriesList] = useState<Array<{ name: string; count: number }>>([]);
 
   // Keep a stable ref to activeCollectionId for use in callbacks
   const activeCollectionIdRef = useRef(activeCollectionId);
@@ -136,11 +138,21 @@ export default function Library() {
     }
   }, []);
 
+  const loadSeries = useCallback(async () => {
+    try {
+      const list = await invoke<Array<{ name: string; count: number }>>("get_series");
+      setSeriesList(list);
+    } catch {
+      // non-fatal
+    }
+  }, []);
+
   useEffect(() => {
     loadCollections();
     loadBooks(null);
     loadRecentlyRead();
-  }, [loadCollections, loadBooks, loadRecentlyRead]);
+    loadSeries();
+  }, [loadCollections, loadBooks, loadRecentlyRead, loadSeries]);
 
   // Load discover books lazily in background (doesn't block UI)
   useEffect(() => {
@@ -212,6 +224,13 @@ export default function Library() {
       importCancelledRef.current = false;
     }
   }, [loadBooks, loadRecentlyRead]);
+
+  const handleSelectSeries = useCallback((name: string | null) => {
+    setActiveSeries(name);
+    setActiveCollectionId(null);
+    if (name) setSortBy("series");
+    loadBooks(null);
+  }, [loadBooks]);
 
   const handleImportFolder = useCallback(async () => {
     try {
@@ -322,6 +341,10 @@ export default function Library() {
       }
       return true;
     })
+    .filter((book) => {
+      if (!activeSeries) return true;
+      return book.series === activeSeries;
+    })
     .sort((a, b) => {
       const dir = sortAsc ? 1 : -1;
       switch (sortBy) {
@@ -330,6 +353,15 @@ export default function Library() {
         case "last_read": return dir * ((lastReadMap[a.id] ?? 0) - (lastReadMap[b.id] ?? 0));
         case "progress": return dir * ((progressMap[a.id] ?? 0) - (progressMap[b.id] ?? 0));
         case "rating": return dir * ((a.rating ?? 0) - (b.rating ?? 0));
+        case "series": {
+          const sa = a.series ?? "";
+          const sb = b.series ?? "";
+          if (sa !== sb) return sa.localeCompare(sb);
+          const va = a.volume ?? 9999;
+          const vb = b.volume ?? 9999;
+          if (va !== vb) return va - vb;
+          return a.title.localeCompare(b.title);
+        }
         case "date_added":
         default: return dir * (a.added_at - b.added_at);
       }
@@ -550,7 +582,7 @@ export default function Library() {
       {/* Sort bar */}
       {(hasBooks || activeCollectionId) && (
         <div className="shrink-0 px-6 py-1.5 flex items-center gap-1 border-b border-warm-border/50 bg-paper">
-          {(["date_added", "title", "author", "last_read", "progress", "rating"] as const).map((key) => {
+          {(["date_added", "title", "author", "last_read", "progress", "rating", "series"] as const).map((key) => {
             const labels: Record<string, string> = {
               date_added: "Date added",
               title: "Title",
@@ -558,6 +590,7 @@ export default function Library() {
               last_read: "Last read",
               progress: "Progress",
               rating: "Rating",
+              series: "Series",
             };
             const isActive = sortBy === key;
             return (
@@ -779,47 +812,159 @@ export default function Library() {
           )}
 
           <div className="grid grid-cols-[repeat(auto-fill,160px)] justify-center gap-5">
-            {filtered.map((book) => (
-              <div
-                key={book.id}
-                onMouseDown={() => startDrag(book.id, book.cover_path ? convertFileSrc(book.cover_path) : undefined)}
-                onMouseUp={() => endDrag()}
-                onDragStart={(e) => e.preventDefault()}
-              >
-                <BookCard
-                  id={book.id}
-                  title={book.title}
-                  author={book.author}
-                  coverPath={book.cover_path}
-                  totalChapters={book.total_chapters}
-                  format={book.format}
-                  progress={progressMap[book.id] ?? 0}
-                  language={book.language}
-                  publishYear={book.publish_year}
-                  series={book.series}
-                  volume={book.volume}
-                  rating={book.rating}
-                  onClick={() => navigate(`/reader/${book.id}`)}
-                  onDelete={handleRemoveBook}
-                  onInfo={(id) => {
-                    const book = books.find((b) => b.id === id);
-                    if (book) setDetailBook(book);
-                  }}
-                  onRemoveFromCollection={
-                    isManualCollectionView && activeCollectionId
-                      ? async () => {
-                          await invoke("remove_book_from_collection", {
-                            bookId: book.id,
-                            collectionId: activeCollectionId,
-                          });
-                          await loadBooks(activeCollectionId);
-                        }
-                      : undefined
-                  }
-                  isScanning={scanningBookId === book.id}
-                />
-              </div>
-            ))}
+            {sortBy === "series" ? (
+              (() => {
+                const seriesBooks = filtered.filter((b) => b.series);
+                const nonSeriesBooks = filtered.filter((b) => !b.series);
+                const groups: Record<string, typeof filtered> = {};
+                for (const book of seriesBooks) {
+                  (groups[book.series!] ??= []).push(book);
+                }
+                for (const bks of Object.values(groups)) {
+                  bks.sort((a, b) => {
+                    const va = a.volume ?? 9999;
+                    const vb = b.volume ?? 9999;
+                    if (va !== vb) return va - vb;
+                    return a.title.localeCompare(b.title);
+                  });
+                }
+                const sortedGroupNames = Object.keys(groups).sort((a, b) => a.localeCompare(b));
+                return (
+                  <>
+                    {sortedGroupNames.map((seriesName) => (
+                      <React.Fragment key={seriesName}>
+                        <div className="col-span-full flex items-center gap-2 pt-4 pb-2">
+                          <span className="text-xs font-semibold text-ink-muted uppercase tracking-wider">{seriesName}</span>
+                          <span className="text-[10px] text-ink-muted/50">{groups[seriesName].length} books</span>
+                          <div className="flex-1 border-t border-warm-border/50" />
+                        </div>
+                        {groups[seriesName].map((book) => (
+                          <div
+                            key={book.id}
+                            onMouseDown={() => startDrag(book.id, book.cover_path ? convertFileSrc(book.cover_path) : undefined)}
+                            onMouseUp={() => endDrag()}
+                            onDragStart={(e) => e.preventDefault()}
+                          >
+                            <BookCard
+                              id={book.id}
+                              title={book.title}
+                              author={book.author}
+                              coverPath={book.cover_path}
+                              totalChapters={book.total_chapters}
+                              format={book.format}
+                              progress={progressMap[book.id] ?? 0}
+                              language={book.language}
+                              publishYear={book.publish_year}
+                              series={book.series}
+                              volume={book.volume}
+                              rating={book.rating}
+                              onClick={() => navigate(`/reader/${book.id}`)}
+                              onDelete={handleRemoveBook}
+                              onInfo={(id) => {
+                                const found = books.find((b) => b.id === id);
+                                if (found) setDetailBook(found);
+                              }}
+                              onRemoveFromCollection={
+                                isManualCollectionView && activeCollectionId
+                                  ? async () => {
+                                      await invoke("remove_book_from_collection", {
+                                        bookId: book.id,
+                                        collectionId: activeCollectionId,
+                                      });
+                                      await loadBooks(activeCollectionId);
+                                    }
+                                  : undefined
+                              }
+                              isScanning={scanningBookId === book.id}
+                            />
+                          </div>
+                        ))}
+                      </React.Fragment>
+                    ))}
+                    {nonSeriesBooks.length > 0 && sortedGroupNames.length > 0 && (
+                      <div className="col-span-full flex items-center gap-2 pt-4 pb-2">
+                        <span className="text-xs font-semibold text-ink-muted uppercase tracking-wider">Other Books</span>
+                        <span className="text-[10px] text-ink-muted/50">{nonSeriesBooks.length} books</span>
+                        <div className="flex-1 border-t border-warm-border/50" />
+                      </div>
+                    )}
+                    {nonSeriesBooks.map((book) => (
+                      <div
+                        key={book.id}
+                        onMouseDown={() => startDrag(book.id, book.cover_path ? convertFileSrc(book.cover_path) : undefined)}
+                        onMouseUp={() => endDrag()}
+                        onDragStart={(e) => e.preventDefault()}
+                      >
+                        <BookCard
+                          id={book.id}
+                          title={book.title}
+                          author={book.author}
+                          coverPath={book.cover_path}
+                          totalChapters={book.total_chapters}
+                          format={book.format}
+                          progress={progressMap[book.id] ?? 0}
+                          language={book.language}
+                          publishYear={book.publish_year}
+                          series={book.series}
+                          volume={book.volume}
+                          rating={book.rating}
+                          onClick={() => navigate(`/reader/${book.id}`)}
+                          onDelete={handleRemoveBook}
+                          onInfo={(id) => {
+                            const found = books.find((b) => b.id === id);
+                            if (found) setDetailBook(found);
+                          }}
+                          onRemoveFromCollection={undefined}
+                          isScanning={scanningBookId === book.id}
+                        />
+                      </div>
+                    ))}
+                  </>
+                );
+              })()
+            ) : (
+              filtered.map((book) => (
+                <div
+                  key={book.id}
+                  onMouseDown={() => startDrag(book.id, book.cover_path ? convertFileSrc(book.cover_path) : undefined)}
+                  onMouseUp={() => endDrag()}
+                  onDragStart={(e) => e.preventDefault()}
+                >
+                  <BookCard
+                    id={book.id}
+                    title={book.title}
+                    author={book.author}
+                    coverPath={book.cover_path}
+                    totalChapters={book.total_chapters}
+                    format={book.format}
+                    progress={progressMap[book.id] ?? 0}
+                    language={book.language}
+                    publishYear={book.publish_year}
+                    series={book.series}
+                    volume={book.volume}
+                    rating={book.rating}
+                    onClick={() => navigate(`/reader/${book.id}`)}
+                    onDelete={handleRemoveBook}
+                    onInfo={(id) => {
+                      const found = books.find((b) => b.id === id);
+                      if (found) setDetailBook(found);
+                    }}
+                    onRemoveFromCollection={
+                      isManualCollectionView && activeCollectionId
+                        ? async () => {
+                            await invoke("remove_book_from_collection", {
+                              bookId: book.id,
+                              collectionId: activeCollectionId,
+                            });
+                            await loadBooks(activeCollectionId);
+                          }
+                        : undefined
+                    }
+                    isScanning={scanningBookId === book.id}
+                  />
+                </div>
+              ))
+            )}
           </div>
           </>
         ) : (
@@ -985,10 +1130,14 @@ export default function Library() {
         open={collectionsOpen}
         collections={collections}
         activeCollectionId={activeCollectionId}
+        activeSeries={activeSeries}
+        seriesList={seriesList}
         onClose={() => setCollectionsOpen(false)}
         onSelect={(id) => {
           setActiveCollectionId(id);
+          setActiveSeries(null);
         }}
+        onSelectSeries={handleSelectSeries}
         onCreate={async (data: CreateCollectionData) => {
           try {
             await invoke("create_collection", {
