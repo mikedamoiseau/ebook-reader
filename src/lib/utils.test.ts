@@ -7,6 +7,7 @@ import {
   clamp,
   isSupportedFile,
   formatMetadataPills,
+  getSpreadPages,
   type BookLike,
 } from "./utils";
 
@@ -270,5 +271,41 @@ describe("formatMetadataPills", () => {
       volume: null,
     });
     expect(pills).toEqual([{ label: "Saga" }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getSpreadPages
+// ---------------------------------------------------------------------------
+describe("getSpreadPages", () => {
+  it("returns cover page solo (index 0)", () => {
+    expect(getSpreadPages(0, 10)).toEqual({ left: 0, right: null });
+  });
+
+  it("pairs pages after cover: 1-2, 3-4, etc.", () => {
+    expect(getSpreadPages(1, 10)).toEqual({ left: 1, right: 2 });
+    expect(getSpreadPages(2, 10)).toEqual({ left: 1, right: 2 });
+    expect(getSpreadPages(3, 10)).toEqual({ left: 3, right: 4 });
+    expect(getSpreadPages(4, 10)).toEqual({ left: 3, right: 4 });
+  });
+
+  it("returns last page solo when odd total", () => {
+    expect(getSpreadPages(6, 7)).toEqual({ left: 5, right: 6 });
+    expect(getSpreadPages(5, 6)).toEqual({ left: 5, right: null });
+  });
+
+  it("handles single-page book", () => {
+    expect(getSpreadPages(0, 1)).toEqual({ left: 0, right: null });
+  });
+
+  it("handles two-page book", () => {
+    expect(getSpreadPages(0, 2)).toEqual({ left: 0, right: null });
+    expect(getSpreadPages(1, 2)).toEqual({ left: 1, right: null });
+  });
+
+  it("handles three-page book", () => {
+    expect(getSpreadPages(0, 3)).toEqual({ left: 0, right: null });
+    expect(getSpreadPages(1, 3)).toEqual({ left: 1, right: 2 });
+    expect(getSpreadPages(2, 3)).toEqual({ left: 1, right: 2 });
   });
 });

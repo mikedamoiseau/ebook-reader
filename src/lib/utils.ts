@@ -115,6 +115,28 @@ export interface MetadataPill {
   label: string;
 }
 
+/** Given a page index and total pages, return the left and right pages for a dual-page spread.
+ *  Cover (index 0) is always solo. After that, pages pair as 1-2, 3-4, 5-6, etc.
+ *  If the last page has no partner (odd total), it displays solo (right: null). */
+export function getSpreadPages(
+  pageIndex: number,
+  totalPages: number,
+): { left: number; right: number | null } {
+  // Cover is always solo
+  if (pageIndex === 0) return { left: 0, right: null };
+
+  // Find the left page of the pair containing pageIndex
+  // After cover: pairs are (1,2), (3,4), (5,6), ...
+  // Left page of a pair is always odd-indexed
+  const left = pageIndex % 2 === 1 ? pageIndex : pageIndex - 1;
+  const right = left + 1;
+
+  // If the right page is beyond total, it's solo
+  if (right >= totalPages) return { left, right: null };
+
+  return { left, right };
+}
+
 export function formatMetadataPills(meta: {
   language?: string | null;
   publishYear?: number | null;
