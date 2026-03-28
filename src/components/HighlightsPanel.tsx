@@ -71,7 +71,8 @@ export default function HighlightsPanel({ bookId, onClose, onGoToChapter }: High
   const handleExport = async () => {
     try {
       const md = await invoke<string>("export_highlights_markdown", { bookId });
-      await navigator.clipboard.writeText(md);
+      const { writeText } = await import("@tauri-apps/plugin-clipboard-manager");
+      await writeText(md);
     } catch {
       // ignore
     }
