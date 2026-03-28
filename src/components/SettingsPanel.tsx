@@ -259,7 +259,7 @@ function formatBytes(bytes: number): string {
 }
 
 export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
-  const { mode, setMode, customColors, setCustomColors, fontSize, setFontSize, fontFamily, setFontFamily, scrollMode, setScrollMode } =
+  const { mode, setMode, customColors, setCustomColors, fontSize, setFontSize, fontFamily, setFontFamily, scrollMode, setScrollMode, typography, setTypography, customCss, setCustomCss } =
     useTheme();
   const panelRef = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
@@ -699,6 +699,95 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
             </p>
           </Accordion>
 
+          {/* Typography */}
+          <Accordion title="Typography">
+            <div className="space-y-4">
+              {/* Line height */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-ink-muted">Line height</label>
+                  <span className="text-xs text-ink-muted tabular-nums">{typography.lineHeight.toFixed(1)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={1.2}
+                  max={2.4}
+                  step={0.1}
+                  value={typography.lineHeight}
+                  onChange={(e) => setTypography({ ...typography, lineHeight: parseFloat(e.target.value) })}
+                  className="w-full accent-accent"
+                />
+              </div>
+
+              {/* Page margins */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-ink-muted">Page margins</label>
+                  <span className="text-xs text-ink-muted tabular-nums">{typography.pageMargins}px</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={80}
+                  step={4}
+                  value={typography.pageMargins}
+                  onChange={(e) => setTypography({ ...typography, pageMargins: parseInt(e.target.value, 10) })}
+                  className="w-full accent-accent"
+                />
+              </div>
+
+              {/* Paragraph spacing */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-ink-muted">Paragraph spacing</label>
+                  <span className="text-xs text-ink-muted tabular-nums">{typography.paragraphSpacing.toFixed(1)}em</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={2}
+                  step={0.1}
+                  value={typography.paragraphSpacing}
+                  onChange={(e) => setTypography({ ...typography, paragraphSpacing: parseFloat(e.target.value) })}
+                  className="w-full accent-accent"
+                />
+              </div>
+
+              {/* Text alignment */}
+              <div>
+                <label className="text-xs font-medium text-ink-muted mb-1 block">Text alignment</label>
+                <div className="flex gap-1 bg-warm-subtle rounded-xl p-1">
+                  {(["left", "justify"] as const).map((option) => (
+                    <button
+                      type="button"
+                      key={option}
+                      onClick={() => setTypography({ ...typography, textAlign: option })}
+                      className={`flex-1 px-3 py-2 text-sm rounded-lg capitalize transition-all duration-150 ${
+                        typography.textAlign === option
+                          ? "bg-surface text-ink shadow-sm font-medium"
+                          : "text-ink-muted hover:text-ink"
+                      }`}
+                    >
+                      {option === "left" ? "Left" : "Justify"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Hyphenation */}
+              <label className="flex items-center justify-between cursor-pointer">
+                <span className="text-xs font-medium text-ink-muted">Hyphenation</span>
+                <button
+                  type="button"
+                  onClick={() => setTypography({ ...typography, hyphenation: !typography.hyphenation })}
+                  className={`relative w-9 h-5 rounded-full transition-colors duration-200 ${typography.hyphenation ? "bg-accent" : "bg-warm-border"}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${typography.hyphenation ? "translate-x-4" : ""}`} />
+                </button>
+              </label>
+            </div>
+          </Accordion>
+
           {/* Scroll mode */}
           <Accordion title="EPUB Reading Mode" defaultOpen>
             <div className="flex gap-1 bg-warm-subtle rounded-xl p-1">
@@ -722,6 +811,31 @@ export default function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 ? "Scroll through all chapters in one continuous flow."
                 : "Read one chapter at a time with prev/next navigation."}
             </p>
+          </Accordion>
+
+          {/* Custom CSS */}
+          <Accordion title="Custom CSS">
+            <div className="space-y-2">
+              <textarea
+                value={customCss}
+                onChange={(e) => setCustomCss(e.target.value)}
+                placeholder={`.reader-content p {\n  color: #333;\n}`}
+                className="w-full h-28 text-xs font-mono bg-warm-subtle border border-warm-border rounded-lg px-3 py-2 text-ink placeholder-ink-muted/40 focus:outline-none focus:border-accent resize-y"
+                spellCheck={false}
+              />
+              <p className="text-[11px] text-ink-muted leading-relaxed">
+                Applied as a global stylesheet while reading EPUBs. Target <code className="bg-warm-subtle px-1 rounded">.reader-content</code> and its children.
+              </p>
+              {customCss && (
+                <button
+                  type="button"
+                  onClick={() => setCustomCss("")}
+                  className="text-xs text-ink-muted hover:text-ink transition-colors"
+                >
+                  Clear custom CSS
+                </button>
+              )}
+            </div>
           </Accordion>
 
           {/* Library */}

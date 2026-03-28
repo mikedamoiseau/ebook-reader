@@ -120,8 +120,8 @@ html, body, #root {
 
 .reader-content p {
   margin-bottom: 1.1em;
-  text-align: justify;
-  hyphens: auto;
+  /* text-align, hyphens, and margin-bottom are overridden dynamically
+     by the <style> tag in Reader.tsx based on typography settings */
 }
 
 .reader-content h1 {

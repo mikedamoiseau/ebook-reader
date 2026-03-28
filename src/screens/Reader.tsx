@@ -44,7 +44,7 @@ interface ReaderProps {
 export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderProps) {
   const { bookId } = useParams<{ bookId: string }>();
   const navigate = useNavigate();
-  const { fontSize, setFontSize, fontFamily, scrollMode } = useTheme();
+  const { fontSize, setFontSize, fontFamily, scrollMode, typography, customCss } = useTheme();
 
   const [bookTitle, setBookTitle] = useState("");
   const [bookFormat, setBookFormat] = useState<"epub" | "cbz" | "cbr" | "pdf">("epub");
@@ -720,6 +720,12 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
         ? '"OpenDyslexic", sans-serif'
         : '"DM Sans Variable", system-ui, sans-serif';
 
+  const readerContentStyle: React.CSSProperties = {
+    fontSize: `${fontSize}px`,
+    lineHeight: typography.lineHeight,
+    fontFamily: fontFamilyCss,
+  };
+
   // ---- Render ----
 
   if (loading) {
@@ -974,6 +980,17 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
           )
         ) : (
           <>
+            {/* Dynamic typography overrides — must target .reader-content p to beat index.css specificity */}
+            <style>{`
+              .reader-content p {
+                margin-bottom: ${typography.paragraphSpacing}em;
+                text-align: ${typography.textAlign};
+                hyphens: ${typography.hyphenation ? "auto" : "manual"};
+                -webkit-hyphens: ${typography.hyphenation ? "auto" : "manual"};
+              }
+            `}</style>
+            {customCss && <style>{customCss}</style>}
+
             <div
               ref={scrollContainerRef}
               className="flex-1 overflow-y-auto relative"
@@ -1055,7 +1072,7 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
               ) : isContinuous ? (
                 /* ── Continuous scroll: all chapters stacked ── */
                 allChaptersLoaded ? (
-                  <div ref={contentRef} className="max-w-[680px] mx-auto px-8 py-10">
+                  <div ref={contentRef} className="max-w-[680px] mx-auto py-10" style={{ paddingLeft: `${typography.pageMargins}px`, paddingRight: `${typography.pageMargins}px` }}>
                     {allChaptersHtml.map((html, i) => {
                       const chapterTitle = toc.find((t) => t.chapter_index === i)?.label;
                       return (
@@ -1075,11 +1092,7 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
                           )}
                           <div
                             className="reader-content"
-                            style={{
-                              fontSize: `${fontSize}px`,
-                              lineHeight: 1.8,
-                              fontFamily: fontFamilyCss,
-                            }}
+                            style={readerContentStyle}
                             dangerouslySetInnerHTML={{ __html: html }}
                           />
                         </div>
@@ -1095,12 +1108,8 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
                 /* ── Paginated: single chapter ── */
                 <div
                   ref={contentRef}
-                  className="reader-content max-w-[680px] mx-auto px-8 py-10"
-                  style={{
-                    fontSize: `${fontSize}px`,
-                    lineHeight: 1.8,
-                    fontFamily: fontFamilyCss,
-                  }}
+                  className="reader-content max-w-[680px] mx-auto py-10"
+                  style={{ ...readerContentStyle, paddingLeft: `${typography.pageMargins}px`, paddingRight: `${typography.pageMargins}px` }}
                   dangerouslySetInnerHTML={{ __html: highlightedHtml }}
                 />
               )}

@@ -4,6 +4,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   type ReactNode,
 } from "react";
 import {
@@ -22,6 +23,15 @@ export type { ColorMode, ColorTokens };
 type ResolvedTheme = "light" | "dark";
 type FontFamily = "serif" | "sans-serif" | "dyslexic";
 type ScrollMode = "paginated" | "continuous";
+type TextAlign = "left" | "justify";
+
+export interface TypographySettings {
+  lineHeight: number;     // 1.2 – 2.4, default 1.8
+  pageMargins: number;    // 0 – 80 (px), default 32 (px-8)
+  textAlign: TextAlign;   // default "justify"
+  paragraphSpacing: number; // 0 – 2 (em), default 1.1
+  hyphenation: boolean;   // default true
+}
 
 interface ThemeContextValue {
   mode: ColorMode;
@@ -35,6 +45,10 @@ interface ThemeContextValue {
   setFontFamily: (family: FontFamily) => void;
   scrollMode: ScrollMode;
   setScrollMode: (mode: ScrollMode) => void;
+  typography: TypographySettings;
+  setTypography: (t: TypographySettings) => void;
+  customCss: string;
+  setCustomCss: (css: string) => void;
 }
 
 const STORAGE_KEYS = {
@@ -43,11 +57,21 @@ const STORAGE_KEYS = {
   fontSize: "ebook-reader-font-size",
   fontFamily: "ebook-reader-font-family",
   scrollMode: "ebook-reader-scroll-mode",
+  typography: "ebook-reader-typography",
+  customCss: "ebook-reader-custom-css",
 } as const;
 
 export const MIN_FONT_SIZE = 14;
 export const MAX_FONT_SIZE = 24;
 const DEFAULT_FONT_SIZE = 18;
+
+const DEFAULT_TYPOGRAPHY: TypographySettings = {
+  lineHeight: 1.8,
+  pageMargins: 32,
+  textAlign: "justify",
+  paragraphSpacing: 1.1,
+  hyphenation: true,
+};
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
@@ -99,6 +123,29 @@ function loadStoredFontFamily(): FontFamily {
   return "serif";
 }
 
+function loadStoredTypography(): TypographySettings {
+  const stored = localStorage.getItem(STORAGE_KEYS.typography);
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored);
+      if (parsed && typeof parsed === "object") {
+        const clampNum = (v: unknown, min: number, max: number, fallback: number) =>
+          typeof v === "number" && isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback;
+        return {
+          lineHeight: clampNum(parsed.lineHeight, 1.2, 2.4, DEFAULT_TYPOGRAPHY.lineHeight),
+          pageMargins: clampNum(parsed.pageMargins, 0, 80, DEFAULT_TYPOGRAPHY.pageMargins),
+          paragraphSpacing: clampNum(parsed.paragraphSpacing, 0, 2, DEFAULT_TYPOGRAPHY.paragraphSpacing),
+          textAlign: parsed.textAlign === "left" || parsed.textAlign === "justify" ? parsed.textAlign : DEFAULT_TYPOGRAPHY.textAlign,
+          hyphenation: typeof parsed.hyphenation === "boolean" ? parsed.hyphenation : DEFAULT_TYPOGRAPHY.hyphenation,
+        };
+      }
+    } catch {
+      localStorage.removeItem(STORAGE_KEYS.typography);
+    }
+  }
+  return DEFAULT_TYPOGRAPHY;
+}
+
 function loadStoredScrollMode(): ScrollMode {
   const stored = localStorage.getItem(STORAGE_KEYS.scrollMode);
   if (stored === "paginated" || stored === "continuous") return stored;
@@ -112,6 +159,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [fontSize, setFontSizeState] = useState(loadStoredFontSize);
   const [fontFamily, setFontFamilyState] = useState<FontFamily>(loadStoredFontFamily);
   const [scrollMode, setScrollModeState] = useState<ScrollMode>(loadStoredScrollMode);
+  const [typography, setTypographyState] = useState<TypographySettings>(loadStoredTypography);
+  const [customCss, setCustomCssState] = useState(() => localStorage.getItem(STORAGE_KEYS.customCss) ?? "");
 
   // For dark: variant purposes, sepia and custom resolve to "light"
   const resolved: ResolvedTheme =
@@ -176,6 +225,20 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(STORAGE_KEYS.scrollMode, sm);
   }, []);
 
+  const setTypography = useCallback((t: TypographySettings) => {
+    setTypographyState(t);
+    localStorage.setItem(STORAGE_KEYS.typography, JSON.stringify(t));
+  }, []);
+
+  const cssPersistTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const setCustomCss = useCallback((css: string) => {
+    setCustomCssState(css);
+    clearTimeout(cssPersistTimer.current);
+    cssPersistTimer.current = setTimeout(() => {
+      localStorage.setItem(STORAGE_KEYS.customCss, css);
+    }, 500);
+  }, []);
+
   return (
     <ThemeContext.Provider
       value={{
@@ -184,6 +247,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         fontSize, setFontSize,
         fontFamily, setFontFamily,
         scrollMode, setScrollMode,
+        typography, setTypography,
+        customCss, setCustomCss,
       }}
     >
       {children}
