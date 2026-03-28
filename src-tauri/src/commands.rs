@@ -6,7 +6,7 @@ use crate::cbz;
 use crate::db::{self, DbPool};
 use crate::epub;
 use crate::models::{
-    Book, BookFormat, Bookmark, Collection, CollectionRule, CollectionType, Highlight,
+    Book, BookFormat, Bookmark, Collection, CollectionRule, CollectionType, CustomFont, Highlight,
     NewRuleInput, ReadingProgress,
 };
 use crate::opds;
@@ -2849,6 +2849,106 @@ pub async fn preview_collection_rules(
     db::preview_collection_rules(&conn, &rules).map_err(|e| e.to_string())
 }
 
+fn derive_font_name(file_name: &str) -> String {
+    let stem = std::path::Path::new(file_name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(file_name);
+
+    let known_suffixes = [
+        "-Regular",
+        "-Bold",
+        "-Italic",
+        "-Light",
+        "-Medium",
+        "-SemiBold",
+        "-ExtraBold",
+        "-Thin",
+        "-Black",
+        "-BoldItalic",
+    ];
+    let mut name = stem.to_string();
+    for suffix in &known_suffixes {
+        if let Some(stripped) = name.strip_suffix(suffix) {
+            name = stripped.to_string();
+            break;
+        }
+    }
+    name
+}
+
+#[tauri::command]
+pub async fn import_custom_font(
+    file_path: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<CustomFont, String> {
+    let source = std::path::Path::new(&file_path);
+    if !source.exists() {
+        return Err(format!("File not found: {file_path}"));
+    }
+
+    let extension = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    if !["ttf", "otf", "woff2"].contains(&extension.as_str()) {
+        return Err(format!("Unsupported font format: .{extension}"));
+    }
+
+    let file_name = source
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let id = Uuid::new_v4().to_string();
+    let fonts_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("fonts");
+    std::fs::create_dir_all(&fonts_dir).map_err(|e| e.to_string())?;
+
+    let dest = fonts_dir.join(format!("{id}.{extension}"));
+    std::fs::copy(source, &dest).map_err(|e| e.to_string())?;
+
+    let font = CustomFont {
+        id,
+        name: derive_font_name(&file_name),
+        file_name,
+        file_path: dest.to_string_lossy().to_string(),
+        created_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64,
+    };
+
+    let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
+    db::insert_custom_font(&conn, &font).map_err(|e| e.to_string())?;
+
+    Ok(font)
+}
+
+#[tauri::command]
+pub async fn get_custom_fonts(state: State<'_, AppState>) -> Result<Vec<CustomFont>, String> {
+    let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
+    db::list_custom_fonts(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn remove_custom_font(font_id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let conn = state.active_db()?.get().map_err(|e| e.to_string())?;
+
+    if let Some(font) = db::get_custom_font(&conn, &font_id).map_err(|e| e.to_string())? {
+        let _ = std::fs::remove_file(&font.file_path);
+    }
+
+    db::delete_custom_font(&conn, &font_id).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2963,5 +3063,14 @@ mod tests {
             msg.contains("/nonexistent/path/book.epub"),
             "error should include the path: {msg}"
         );
+    }
+
+    #[test]
+    fn test_derive_font_name() {
+        assert_eq!(derive_font_name("Merriweather-Regular.ttf"), "Merriweather");
+        assert_eq!(derive_font_name("FiraCode-Bold.woff2"), "FiraCode");
+        assert_eq!(derive_font_name("My Font.otf"), "My Font");
+        assert_eq!(derive_font_name("Roboto-BoldItalic.ttf"), "Roboto");
+        assert_eq!(derive_font_name("SimpleFont.ttf"), "SimpleFont");
     }
 }

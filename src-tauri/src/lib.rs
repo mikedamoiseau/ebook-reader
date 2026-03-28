@@ -190,6 +190,9 @@ pub fn run() {
             commands::set_enrichment_provider_config,
             commands::get_activity_log,
             commands::preview_collection_rules,
+            commands::import_custom_font,
+            commands::get_custom_fonts,
+            commands::remove_custom_font,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
