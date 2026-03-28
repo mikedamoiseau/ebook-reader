@@ -33,8 +33,11 @@ interface CollectionsSidebarProps {
   open: boolean;
   collections: Collection[];
   activeCollectionId: string | null;
+  activeSeries: string | null;
+  seriesList: Array<{ name: string; count: number }>;
   onClose: () => void;
   onSelect: (id: string | null) => void;
+  onSelectSeries: (name: string | null) => void;
   onCreate: (data: CreateCollectionData) => void | Promise<void>;
   onEdit: (id: string, data: CreateCollectionData) => void | Promise<void>;
   onDelete: (id: string) => void;
@@ -595,8 +598,11 @@ export default function CollectionsSidebar({
   open,
   collections,
   activeCollectionId,
+  activeSeries,
+  seriesList,
   onClose,
   onSelect,
+  onSelectSeries,
   onCreate,
   onEdit,
   onDelete,
@@ -651,11 +657,11 @@ export default function CollectionsSidebar({
               {/* All Books row */}
               <button
                 className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-sm transition-colors ${
-                  activeCollectionId === null
+                  activeCollectionId === null && activeSeries === null
                     ? "bg-accent-light text-accent font-medium"
                     : "text-ink-muted hover:text-ink hover:bg-warm-subtle"
                 }`}
-                onClick={() => onSelect(null)}
+                onClick={() => { onSelect(null); onSelectSeries(null); }}
               >
                 <svg width="15" height="15" viewBox="0 0 20 20" fill="none" className="shrink-0">
                   <path
@@ -686,6 +692,38 @@ export default function CollectionsSidebar({
                   onDropBook={onDropBook}
                 />
               ))}
+
+              {/* Series section */}
+              {seriesList.length > 0 && (
+                <>
+                  <div className="mx-3 my-1 border-t border-warm-border" />
+                  <div className="px-3 pt-2 pb-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
+                      Series
+                    </span>
+                  </div>
+                  {seriesList.map((s) => (
+                    <button
+                      key={s.name}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors ${
+                        activeSeries === s.name
+                          ? "bg-accent-light text-accent font-medium"
+                          : "text-ink-muted hover:text-ink hover:bg-warm-subtle"
+                      }`}
+                      onClick={() => {
+                        onSelect(null);
+                        onSelectSeries(s.name);
+                      }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 20 20" fill="none" className="shrink-0">
+                        <path d="M4 4h3v12H4zM9 4h3v12H9zM14 6h3v8h-3z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+                      </svg>
+                      <span className="flex-1 text-left truncate">{s.name}</span>
+                      <span className="text-[10px] text-ink-muted/60 tabular-nums">{s.count}</span>
+                    </button>
+                  ))}
+                </>
+              )}
             </nav>
 
             {/* Footer */}
