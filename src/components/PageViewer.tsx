@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getSpreadPages } from "../lib/utils";
 
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
@@ -11,6 +12,8 @@ interface PageViewerProps {
   totalPages: number;
   initialPage?: number;
   onPageChange?: (pageIndex: number) => void;
+  dualPage?: boolean;
+  mangaMode?: boolean;
 }
 
 export default function PageViewer({
@@ -19,9 +22,12 @@ export default function PageViewer({
   totalPages,
   initialPage = 0,
   onPageChange,
+  dualPage = false,
+  mangaMode = false,
 }: PageViewerProps) {
   const [pageIndex, setPageIndex] = useState(initialPage);
-  const [imageData, setImageData] = useState<string | null>(null);
+  const [leftImageData, setLeftImageData] = useState<string | null>(null);
+  const [rightImageData, setRightImageData] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,38 +38,55 @@ export default function PageViewer({
   const panStart = useRef({ x: 0, y: 0 });
   const panOffset = useRef({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
+  const spreadRef = useRef<HTMLDivElement>(null);
+
+  const spread = dualPage ? getSpreadPages(pageIndex, totalPages) : { left: pageIndex, right: null };
 
   // Apply transform directly to the DOM (no React re-render)
   const applyTransform = useCallback((z: number, p: { x: number; y: number }) => {
-    if (imgRef.current) {
-      imgRef.current.style.transform = `scale(${z}) translate(${p.x / z}px, ${p.y / z}px)`;
+    if (spreadRef.current) {
+      spreadRef.current.style.transform = `scale(${z}) translate(${p.x / z}px, ${p.y / z}px)`;
     }
   }, []);
 
   const loadPage = useCallback(
-    async (index: number) => {
-      setLoading(true);
-      setError(null);
-      try {
-        const command = format === "pdf" ? "get_pdf_page" : "get_comic_page";
-        const data = await invoke<string>(command, {
-          bookId,
-          pageIndex: index,
-        });
-        setImageData(data);
-      } catch (err) {
-        setError(String(err));
-      } finally {
-        setLoading(false);
-      }
+    async (index: number): Promise<string> => {
+      const command = format === "pdf" ? "get_pdf_page" : "get_comic_page";
+      const data = await invoke<string>(command, {
+        bookId,
+        pageIndex: index,
+      });
+      return data;
     },
     [bookId, format]
   );
 
+  // Load spread (one or two pages in parallel)
   useEffect(() => {
-    loadPage(pageIndex);
-  }, [pageIndex, loadPage]);
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    const loadSpread = async () => {
+      try {
+        const promises: Promise<string>[] = [loadPage(spread.left)];
+        if (spread.right !== null) {
+          promises.push(loadPage(spread.right));
+        }
+        const results = await Promise.all(promises);
+        if (cancelled) return;
+        setLeftImageData(results[0]);
+        setRightImageData(results.length > 1 ? results[1] : null);
+      } catch (err) {
+        if (!cancelled) setError(String(err));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    loadSpread();
+    return () => { cancelled = true; };
+  }, [spread.left, spread.right, loadPage]);
 
   const goTo = useCallback(
     (index: number) => {
@@ -77,8 +100,31 @@ export default function PageViewer({
     [totalPages, onPageChange]
   );
 
-  const prevPage = useCallback(() => goTo(pageIndex - 1), [pageIndex, goTo]);
-  const nextPage = useCallback(() => goTo(pageIndex + 1), [pageIndex, goTo]);
+  // Navigate by spread: advance to next/prev spread's left page
+  const prevSpread = useCallback(() => {
+    if (dualPage) {
+      if (spread.left <= 0) return;
+      const prevLeft = spread.left <= 2 ? 0 : spread.left - 2;
+      goTo(prevLeft);
+    } else {
+      goTo(pageIndex - 1);
+    }
+  }, [dualPage, spread.left, pageIndex, goTo]);
+
+  const nextSpread = useCallback(() => {
+    if (dualPage) {
+      const nextLeft = spread.right !== null ? spread.right + 1 : spread.left + 1;
+      if (nextLeft >= totalPages) return;
+      goTo(nextLeft);
+    } else {
+      goTo(pageIndex + 1);
+    }
+  }, [dualPage, spread, pageIndex, totalPages, goTo]);
+
+  const isAtStart = dualPage ? spread.left <= 0 : pageIndex <= 0;
+  const isAtEnd = dualPage
+    ? (spread.right !== null ? spread.right >= totalPages - 1 : spread.left >= totalPages - 1)
+    : pageIndex >= totalPages - 1;
 
   const zoomIn = useCallback(() => {
     setZoom((z) => Math.min(MAX_ZOOM, Math.round((z + ZOOM_STEP) * 100) / 100));
@@ -99,14 +145,13 @@ export default function PageViewer({
     applyTransform(1, panRef.current);
   }, [applyTransform]);
 
-  // Keyboard: arrows for pages, +/- for zoom
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
 
-      if (e.key === "ArrowLeft") prevPage();
-      else if (e.key === "ArrowRight") nextPage();
+      if (e.key === "ArrowLeft") prevSpread();
+      else if (e.key === "ArrowRight") nextSpread();
       else if ((e.key === "=" || e.key === "+") && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         zoomIn();
@@ -120,9 +165,8 @@ export default function PageViewer({
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [prevPage, nextPage, zoomIn, zoomOut, zoomReset]);
+  }, [prevSpread, nextSpread, zoomIn, zoomOut, zoomReset]);
 
-  // Mouse wheel: Ctrl+scroll = zoom, plain scroll = page nav
   const wheelCooldown = useRef(false);
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
@@ -132,19 +176,17 @@ export default function PageViewer({
         else zoomOut();
         return;
       }
-      // When zoomed in, let native scroll handle panning
       if (zoom > 1) return;
       if (wheelCooldown.current || loading) return;
       if (Math.abs(e.deltaY) < 10) return;
       wheelCooldown.current = true;
-      if (e.deltaY > 0) nextPage();
-      else prevPage();
+      if (e.deltaY > 0) nextSpread();
+      else prevSpread();
       setTimeout(() => { wheelCooldown.current = false; }, 300);
     },
-    [nextPage, prevPage, loading, zoomIn, zoomOut, zoom]
+    [nextSpread, prevSpread, loading, zoomIn, zoomOut, zoom]
   );
 
-  // Pan with mouse drag when zoomed in
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if (zoom <= 1) return;
@@ -176,6 +218,10 @@ export default function PageViewer({
 
   const isZoomed = zoom !== 1;
 
+  const pageLabel = dualPage && spread.right !== null
+    ? `Pages ${spread.left + 1}–${spread.right + 1} / ${totalPages}`
+    : `Page ${spread.left + 1} / ${totalPages}`;
+
   return (
     <div className="flex flex-col flex-1 min-h-0 bg-paper">
       {/* Page image area */}
@@ -194,25 +240,41 @@ export default function PageViewer({
           <div className="text-sm text-red-500 text-center max-w-sm">
             Failed to load page: {error}
           </div>
-        ) : imageData ? (
-          <img
-            ref={imgRef}
-            src={imageData}
-            alt={`Page ${pageIndex + 1} of ${totalPages}`}
-            className="max-h-full max-w-full object-contain rounded-sm shadow-[0_4px_24px_-4px_rgba(44,34,24,0.18)] will-change-transform"
+        ) : (
+          <div
+            ref={spreadRef}
+            className={`flex items-center justify-center gap-1 max-h-full will-change-transform ${mangaMode && dualPage ? "flex-row-reverse" : "flex-row"}`}
             style={{
               transform: `scale(${zoom}) translate(${panRef.current.x / zoom}px, ${panRef.current.y / zoom}px)`,
             }}
-            draggable={false}
-          />
-        ) : null}
+          >
+            {leftImageData && (
+              <img
+                src={leftImageData}
+                alt={`Page ${spread.left + 1} of ${totalPages}`}
+                className="max-h-full object-contain rounded-sm shadow-[0_4px_24px_-4px_rgba(44,34,24,0.18)]"
+                style={{ maxWidth: dualPage && rightImageData ? "50%" : "100%" }}
+                draggable={false}
+              />
+            )}
+            {rightImageData && (
+              <img
+                src={rightImageData}
+                alt={`Page ${(spread.right ?? 0) + 1} of ${totalPages}`}
+                className="max-h-full object-contain rounded-sm shadow-[0_4px_24px_-4px_rgba(44,34,24,0.18)]"
+                style={{ maxWidth: "50%" }}
+                draggable={false}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {/* Navigation bar */}
       <div className="shrink-0 border-t border-warm-border bg-surface px-5 py-3 flex items-center gap-3">
         <button
-          onClick={prevPage}
-          disabled={pageIndex <= 0}
+          onClick={prevSpread}
+          disabled={isAtStart}
           className="flex items-center gap-1.5 px-4 py-1.5 text-sm text-ink-muted bg-warm-subtle hover:bg-warm-border rounded-xl transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           aria-label="Previous page"
         >
@@ -223,7 +285,7 @@ export default function PageViewer({
         </button>
 
         <span className="flex-1 text-center text-xs text-ink-muted tabular-nums">
-          Page {pageIndex + 1} / {totalPages}
+          {pageLabel}
         </span>
 
         {/* Zoom controls */}
@@ -254,8 +316,8 @@ export default function PageViewer({
         </div>
 
         <button
-          onClick={nextPage}
-          disabled={pageIndex >= totalPages - 1}
+          onClick={nextSpread}
+          disabled={isAtEnd}
           className="flex items-center gap-1.5 px-4 py-1.5 text-sm text-ink-muted bg-warm-subtle hover:bg-warm-border rounded-xl transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           aria-label="Next page"
         >
