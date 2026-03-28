@@ -678,6 +678,56 @@ pub fn get_chapter_content_from_cache(
     ))
 }
 
+// ---- Word counting ----
+
+/// Strip HTML tags from a string and return plain text.
+pub fn strip_html_tags(html: &str) -> String {
+    let mut result = String::with_capacity(html.len());
+    let mut in_tag = false;
+    for ch in html.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => {
+                in_tag = false;
+                result.push(' '); // space between tags
+            }
+            _ if !in_tag => result.push(ch),
+            _ => {}
+        }
+    }
+    result
+}
+
+/// Count words in a string (split by whitespace).
+pub fn count_words(text: &str) -> usize {
+    text.split_whitespace().count()
+}
+
+/// Get word counts for all chapters from a cached EPUB archive.
+pub fn get_chapter_word_counts(
+    cached: &mut CachedEpubArchive,
+) -> Result<Vec<usize>, EpubError> {
+    let mut counts = Vec::with_capacity(cached.spine.len());
+    for i in 0..cached.spine.len() {
+        let idref = &cached.spine[i];
+        let href = cached
+            .manifest
+            .get(idref)
+            .map(|item| item.href.clone())
+            .ok_or_else(|| EpubError::MissingFile(format!("Manifest item '{idref}' not found")))?;
+
+        let base_dir = &cached.base_dir;
+        let entry_name = find_zip_entry_name(&mut cached.archive, base_dir, &href)
+            .ok_or_else(|| EpubError::MissingFile(format!("{base_dir}{href}")))?;
+
+        let raw_html = read_zip_entry(&mut cached.archive, &entry_name)?;
+        let body_only = clean(&raw_html); // strip <head>, <style>, <script> etc.
+        let text = strip_html_tags(&body_only);
+        counts.push(count_words(&text));
+    }
+    Ok(counts)
+}
+
 // ---- Inline-image helpers ----
 
 /// Resolve a relative path against a zip-internal base directory.
@@ -1566,5 +1616,41 @@ mod tests {
         let result = rewrite_img_srcs_to_asset_urls(html, &mut archive, "", &image_dir_str);
 
         assert_eq!(result, html, "missing images should leave tag unchanged");
+    }
+
+    // ---- Word counting tests ----
+
+    #[test]
+    fn test_strip_html_tags_basic() {
+        assert_eq!(strip_html_tags("<p>Hello world</p>"), " Hello world ");
+    }
+
+    #[test]
+    fn test_strip_html_tags_nested() {
+        assert_eq!(
+            strip_html_tags("<div><p>One <strong>two</strong> three</p></div>"),
+            "  One  two  three  "
+        );
+    }
+
+    #[test]
+    fn test_strip_html_tags_empty() {
+        assert_eq!(strip_html_tags(""), "");
+        assert_eq!(strip_html_tags("<br/><hr/>"), "  ");
+    }
+
+    #[test]
+    fn test_count_words_basic() {
+        assert_eq!(count_words("hello world"), 2);
+        assert_eq!(count_words("  one  two  three  "), 3);
+        assert_eq!(count_words(""), 0);
+        assert_eq!(count_words("   "), 0);
+    }
+
+    #[test]
+    fn test_count_words_from_html() {
+        let html = "<p>The quick brown fox jumps over the lazy dog.</p>";
+        let text = strip_html_tags(html);
+        assert_eq!(count_words(&text), 9);
     }
 }

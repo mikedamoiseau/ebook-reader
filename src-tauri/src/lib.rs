@@ -137,6 +137,7 @@ pub fn run() {
             commands::remove_book,
             commands::get_chapter_content,
             commands::get_all_chapters,
+            commands::get_chapter_word_counts,
             commands::get_toc,
             commands::get_reading_progress,
             commands::save_reading_progress,

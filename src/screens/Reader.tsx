@@ -79,6 +79,10 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
   const chapterDivRefs = useRef<(HTMLDivElement | null)[]>([]);
   const isContinuous = scrollMode === "continuous" && bookFormat === "epub";
 
+  // Time-to-finish state
+  const [chapterWordCounts, setChapterWordCounts] = useState<number[]>([]);
+  const READING_WPM = 250;
+
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const chapterNavRef = useRef<HTMLDivElement>(null);
@@ -152,6 +156,15 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
       cancelled = true;
     };
   }, [bookId]);
+
+  // ---- Fetch word counts for time-to-finish (EPUB only) ----
+
+  useEffect(() => {
+    if (!bookId || loading || bookFormat !== "epub") return;
+    invoke<number[]>("get_chapter_word_counts", { bookId })
+      .then(setChapterWordCounts)
+      .catch(() => {}); // word counts are best-effort
+  }, [bookId, loading, bookFormat]);
 
   // ---- Load all chapters for continuous scroll mode ----
 
@@ -726,6 +739,36 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
     fontFamily: fontFamilyCss,
   };
 
+  // ---- Time-to-finish estimates ----
+
+  const timeEstimate = useMemo(() => {
+    if (chapterWordCounts.length === 0 || bookFormat !== "epub") return null;
+    const currentChapterWords = chapterWordCounts[chapterIndex] ?? 0;
+    // In continuous mode, scrollProgress is book-global; use chapter-local fraction instead
+    const chapterProgress = isContinuous ? getChapterScrollPosition() : scrollProgress;
+    const wordsLeftInChapter = Math.round(currentChapterWords * (1 - chapterProgress));
+    const wordsLeftInBook = chapterWordCounts
+      .slice(chapterIndex + 1)
+      .reduce((sum, w) => sum + w, 0) + wordsLeftInChapter;
+
+    if (wordsLeftInBook === 0) return null;
+
+    const minsLeftChapter = Math.max(1, Math.round(wordsLeftInChapter / READING_WPM));
+    const minsLeftBook = Math.max(1, Math.round(wordsLeftInBook / READING_WPM));
+
+    const formatTime = (mins: number) => {
+      if (mins < 60) return `${mins} min`;
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return m > 0 ? `${h}h ${m}m` : `${h}h`;
+    };
+
+    return {
+      chapter: formatTime(minsLeftChapter),
+      book: formatTime(minsLeftBook),
+    };
+  }, [chapterWordCounts, chapterIndex, scrollProgress, bookFormat, isContinuous, getChapterScrollPosition]);
+
   // ---- Render ----
 
   if (loading) {
@@ -1158,6 +1201,11 @@ export default function Reader({ onOpenSettings, settingsOpen = false }: ReaderP
               <span className="text-[11px] text-ink-muted tabular-nums w-8 text-right">
                 {Math.round(scrollProgress * 100)}%
               </span>
+              {timeEstimate && (
+                <span className="text-[11px] text-ink-muted/70 whitespace-nowrap ml-1" title={`${timeEstimate.chapter} left in chapter, ${timeEstimate.book} left in book`}>
+                  {timeEstimate.book} left
+                </span>
+              )}
             </footer>
           </>
         )}
